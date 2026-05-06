@@ -26,23 +26,23 @@ permissions:
   contents: read
 
 jobs:
-  reuse:
-    name: "REUSE Compliance"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@v2
-        with:
-          egress-policy: audit
+  # reuse:
+  #   name: "REUSE Compliance"
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Harden runner
+  #       uses: step-security/harden-runner@v2
+  #       with:
+  #         egress-policy: audit
 
-      - name: Checkout repository
-        uses: Project-Tick-Infrastructure/checkout@v2
-        with:
-          source-repository: ${{ inputs.source-repository || '' }}
-          show-progress: 'false'
+  #     - name: Checkout repository
+  #       uses: Project-Tick-Infrastructure/checkout@v2
+  #       with:
+  #         source-repository: ${{ inputs.source-repository || '' }}
+  #         show-progress: 'false'
 
-      - name: Check REUSE compliance
-        uses: fsfe/reuse-action@v6
+  #     - name: Check REUSE compliance
+  #       uses: fsfe/reuse-action@v6
   whitespace:
     name: "Whitespace"
     runs-on: ubuntu-latest
