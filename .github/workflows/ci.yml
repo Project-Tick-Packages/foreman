@@ -234,10 +234,6 @@ jobs:
             pipeline_id="$(printf '%s' "$callback_url" | sed -nE 's#^.*/api/pipelines/([0-9a-fA-F-]+)/callback/?$#\1#p')"
           fi
 
-          if [[ -n "$callback_token" ]]; then
-            echo "::add-mask::$callback_token"
-          fi
-
           {
             echo "callback_url=$callback_url"
             echo "cb_auth=$callback_token"
