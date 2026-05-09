@@ -1,0 +1,126 @@
+name: Foreman Job Callback
+description: >
+  Report job status (start/finish) to Foreman so it can track individual
+  jobs as stages within a pipeline. Call at the beginning and end of each job.
+
+inputs:
+  callback_url:
+    description: Foreman callback base URL.
+    required: false
+    default: ""
+  callback_token:
+    description: Foreman callback bearer token.
+    required: false
+    default: ""
+  pipeline_id:
+    description: Foreman pipeline ID for admin-authenticated callbacks.
+    required: false
+    default: ""
+  foreman_base_url:
+    description: Public Foreman base URL.
+    required: false
+    default: https://builds.projecttick.net
+  foreman_api_token:
+    description: Foreman admin API token.
+    required: false
+    default: ""
+  job_name:
+    description: Display name of the current job.
+    required: true
+  job_id:
+    description: GitHub Actions job ID (${{ github.job }}).
+    required: false
+    default: ""
+  status:
+    description: "Job status: pending, running, success, failure, cancelled, skipped."
+    required: true
+  runner_name:
+    description: Runner name.
+    required: false
+    default: ""
+  runner_os:
+    description: Runner OS.
+    required: false
+    default: ""
+  conclusion:
+    description: Job conclusion when finished.
+    required: false
+    default: ""
+  steps_json:
+    description: JSON array of step metadata [{name, status, number, duration}].
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Send job callback
+      shell: bash
+      env:
+        CALLBACK_URL: ${{ inputs.callback_url }}
+        CALLBACK_TOKEN: ${{ inputs.callback_token }}
+        PIPELINE_ID: ${{ inputs.pipeline_id }}
+        FOREMAN_BASE_URL: ${{ inputs.foreman_base_url }}
+        FOREMAN_API_TOKEN: ${{ inputs.foreman_api_token }}
+        JOB_NAME: ${{ inputs.job_name }}
+        JOB_ID: ${{ inputs.job_id }}
+        STATUS: ${{ inputs.status }}
+        RUNNER_NAME: ${{ inputs.runner_name }}
+        RUNNER_OS: ${{ inputs.runner_os }}
+        CONCLUSION: ${{ inputs.conclusion }}
+        STEPS_JSON: ${{ inputs.steps_json }}
+      run: |
+        set -euo pipefail
+
+        started_at=""
+        finished_at=""
+        if [[ "$STATUS" == "running" ]]; then
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        elif [[ "$STATUS" == "success" || "$STATUS" == "failure" || "$STATUS" == "cancelled" ]]; then
+          finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        fi
+
+        payload="$(jq -nc \
+          --arg job_name "$JOB_NAME" \
+          --arg job_id "$JOB_ID" \
+          --arg status "$STATUS" \
+          --arg runner_name "$RUNNER_NAME" \
+          --arg runner_os "$RUNNER_OS" \
+          --arg conclusion "$CONCLUSION" \
+          --arg started_at "$started_at" \
+          --arg finished_at "$finished_at" \
+          --argjson steps "${STEPS_JSON:-null}" \
+          '{
+            job_name: $job_name,
+            status: $status
+          }
+          + (if $job_id != "" then {job_id: $job_id} else {} end)
+          + (if $runner_name != "" then {runner_name: $runner_name} else {} end)
+          + (if $runner_os != "" then {runner_os: $runner_os} else {} end)
+          + (if $conclusion != "" then {conclusion: $conclusion} else {} end)
+          + (if $started_at != "" then {started_at: $started_at} else {} end)
+          + (if $finished_at != "" then {finished_at: $finished_at} else {} end)
+          + (if $steps != null then {steps: $steps} else {} end)')"
+
+        # Try callback token auth first, then admin auth
+        if [[ -n "$CALLBACK_URL" && -n "$CALLBACK_TOKEN" ]]; then
+          curl \
+            --silent --show-error --fail \
+            --retry 3 --retry-all-errors \
+            --request POST \
+            --header "Authorization: Bearer $CALLBACK_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "${CALLBACK_URL%/}/jobs" || echo "::warning::Failed to send job callback (token auth)"
+        elif [[ -n "$PIPELINE_ID" && -n "$FOREMAN_API_TOKEN" ]]; then
+          curl \
+            --silent --show-error --fail \
+            --retry 3 --retry-all-errors \
+            --request POST \
+            --header "Authorization: Bearer $FOREMAN_API_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "${FOREMAN_BASE_URL%/}/api/pipelines/${PIPELINE_ID}/admin-callback/jobs" || echo "::warning::Failed to send job callback (admin auth)"
+        else
+          echo "No callback destination configured; skipping job callback."
+        fi

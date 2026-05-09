@@ -285,6 +285,17 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Report Gate job started
+        if: needs.callback-start.outputs.pipeline_id != ''
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: Gate
+          job_id: ${{ github.job }}
+          status: running
+          runner_os: ${{ runner.os }}
+
       - name: Resolve plan from Foreman
         id: plan
         shell: bash
@@ -411,6 +422,18 @@ jobs:
             echo "- Changed projects: $(jq -r '.changed_projects // ""' "$plan_file")"
             echo "- Runnable jobs: ${runnable_jobs:-none}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report Gate job completed
+        if: always() && needs.callback-start.outputs.pipeline_id != ''
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: Gate
+          job_id: ${{ github.job }}
+          status: ${{ job.status == 'success' && 'success' || (cancelled() && 'cancelled' || 'failure') }}
+          conclusion: ${{ job.status }}
+          runner_os: ${{ runner.os }}
 
   # ╔════════════════════════════════════════════════════════════════╗
   # ║  STAGE 1 — Lint & Commit Checks (fast, blocks everything)      ║
@@ -798,6 +821,253 @@ jobs:
       packages: write
     secrets: inherit
 
+
+  # ╔════════════════════════════════════════════════════════════════╗
+  # ║  Job Status Reporters                                          ║
+  # ║                                                                ║
+  # ║  Lightweight jobs that report reusable workflow results to     ║
+  # ║  Foreman as individual stage statuses.                         ║
+  # ╚════════════════════════════════════════════════════════════════╝
+
+  report-lint:
+    name: "Report: Lint"
+    needs: [callback-start, lint]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: Lint
+          status: ${{ needs.lint.result == 'success' && 'success' || (needs.lint.result == 'skipped' && 'skipped' || (needs.lint.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.lint.result }}
+
+  report-mnv:
+    name: "Report: MNV"
+    needs: [callback-start, mnv]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: MNV
+          status: ${{ needs.mnv.result == 'success' && 'success' || (needs.mnv.result == 'skipped' && 'skipped' || (needs.mnv.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.mnv.result }}
+
+  report-cgit:
+    name: "Report: CGit"
+    needs: [callback-start, cgit]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: CGit
+          status: ${{ needs.cgit.result == 'success' && 'success' || (needs.cgit.result == 'skipped' && 'skipped' || (needs.cgit.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.cgit.result }}
+
+  report-cmark:
+    name: "Report: CMark"
+    needs: [callback-start, cmark]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: CMark
+          status: ${{ needs.cmark.result == 'success' && 'success' || (needs.cmark.result == 'skipped' && 'skipped' || (needs.cmark.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.cmark.result }}
+
+  report-corebinutils:
+    name: "Report: CoreBinutils"
+    needs: [callback-start, corebinutils]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: CoreBinutils
+          status: ${{ needs.corebinutils.result == 'success' && 'success' || (needs.corebinutils.result == 'skipped' && 'skipped' || (needs.corebinutils.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.corebinutils.result }}
+
+  report-genqrcode:
+    name: "Report: GenQRCode"
+    needs: [callback-start, genqrcode]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: GenQRCode
+          status: ${{ needs.genqrcode.result == 'success' && 'success' || (needs.genqrcode.result == 'skipped' && 'skipped' || (needs.genqrcode.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.genqrcode.result }}
+
+  report-neozip:
+    name: "Report: NeoZip"
+    needs: [callback-start, neozip]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: NeoZip
+          status: ${{ needs.neozip.result == 'success' && 'success' || (needs.neozip.result == 'skipped' && 'skipped' || (needs.neozip.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.neozip.result }}
+
+  report-json4cpp:
+    name: "Report: JSON4CPP"
+    needs: [callback-start, json4cpp]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: JSON4CPP
+          status: ${{ needs.json4cpp.result == 'success' && 'success' || (needs.json4cpp.result == 'skipped' && 'skipped' || (needs.json4cpp.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.json4cpp.result }}
+
+  report-libnbtplusplus:
+    name: "Report: libNBT++"
+    needs: [callback-start, libnbtplusplus]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: libNBT++
+          status: ${{ needs.libnbtplusplus.result == 'success' && 'success' || (needs.libnbtplusplus.result == 'skipped' && 'skipped' || (needs.libnbtplusplus.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.libnbtplusplus.result }}
+
+  report-tomlplusplus:
+    name: "Report: TOML++"
+    needs: [callback-start, tomlplusplus]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: TOML++
+          status: ${{ needs.tomlplusplus.result == 'success' && 'success' || (needs.tomlplusplus.result == 'skipped' && 'skipped' || (needs.tomlplusplus.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.tomlplusplus.result }}
+
+  report-meshmc:
+    name: "Report: MeshMC"
+    needs: [callback-start, meshmc]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: MeshMC
+          status: ${{ needs.meshmc.result == 'success' && 'success' || (needs.meshmc.result == 'skipped' && 'skipped' || (needs.meshmc.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.meshmc.result }}
+
+  report-forgewrapper:
+    name: "Report: ForgeWrapper"
+    needs: [callback-start, forgewrapper]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: ForgeWrapper
+          status: ${{ needs.forgewrapper.result == 'success' && 'success' || (needs.forgewrapper.result == 'skipped' && 'skipped' || (needs.forgewrapper.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.forgewrapper.result }}
+
+  report-imagesplusplus:
+    name: "Report: Docker Images"
+    needs: [callback-start, imagesplusplus]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: Docker Images
+          status: ${{ needs.imagesplusplus.result == 'success' && 'success' || (needs.imagesplusplus.result == 'skipped' && 'skipped' || (needs.imagesplusplus.result == 'cancelled' && 'cancelled' || 'failure')) }}
+          conclusion: ${{ needs.imagesplusplus.result }}
+
+  report-analysis:
+    name: "Report: Analysis"
+    needs: [callback-start, cmark-fuzz, json4cpp-fuzz, json4cpp-amalgam, tomlplusplus-fuzz, neozip-fuzz, mnv-codeql, neozip-codeql]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: "Extended Analysis"
+          status: >-
+            ${{
+              (needs.cmark-fuzz.result == 'failure' || needs.json4cpp-fuzz.result == 'failure' ||
+               needs.json4cpp-amalgam.result == 'failure' || needs.tomlplusplus-fuzz.result == 'failure' ||
+               needs.neozip-fuzz.result == 'failure' || needs.mnv-codeql.result == 'failure' ||
+               needs.neozip-codeql.result == 'failure') && 'failure' ||
+              (needs.cmark-fuzz.result == 'cancelled' || needs.json4cpp-fuzz.result == 'cancelled' ||
+               needs.json4cpp-amalgam.result == 'cancelled' || needs.tomlplusplus-fuzz.result == 'cancelled' ||
+               needs.neozip-fuzz.result == 'cancelled' || needs.mnv-codeql.result == 'cancelled' ||
+               needs.neozip-codeql.result == 'cancelled') && 'cancelled' ||
+              'success'
+            }}
+
+  report-containers:
+    name: "Report: Containers"
+    needs: [callback-start, meshmc-container, meshmc-nix]
+    if: always() && needs.callback-start.outputs.pipeline_id != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: "Containers & Nix"
+          status: >-
+            ${{
+              (needs.meshmc-container.result == 'failure' || needs.meshmc-nix.result == 'failure') && 'failure' ||
+              (needs.meshmc-container.result == 'cancelled' || needs.meshmc-nix.result == 'cancelled') && 'cancelled' ||
+              'success'
+            }}
+
   # ╔════════════════════════════════════════════════════════════════╗
   # ║  STAGE 8 — Final Verdicts                                      ║
   # ║                                                                ║
@@ -834,6 +1104,17 @@ jobs:
       - meshmc-nix
     runs-on: ubuntu-latest
     steps:
+      - name: Report Verdict job started
+        if: needs.callback-start.outputs.pipeline_id != ''
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: CI Verdict
+          job_id: ${{ github.job }}
+          status: running
+          runner_os: ${{ runner.os }}
+
       - name: Evaluate results
         run: |
           # shellcheck disable=SC2129
@@ -893,6 +1174,18 @@ jobs:
           else
             echo "**Result: PASSED** — all executed jobs succeeded." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Report Verdict job completed
+        if: always() && needs.callback-start.outputs.pipeline_id != ''
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+        with:
+          pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          job_name: CI Verdict
+          job_id: ${{ github.job }}
+          status: ${{ job.status == 'success' && 'success' || (cancelled() && 'cancelled' || 'failure') }}
+          conclusion: ${{ job.status }}
+          runner_os: ${{ runner.os }}
 
   callback-status:
     name: "Callback Status"
