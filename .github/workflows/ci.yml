@@ -278,6 +278,7 @@ jobs:
       changed_projects: ${{ steps.plan.outputs.changed_projects }}
       build_type: ${{ steps.plan.outputs.build_type }}
       jobs_json: ${{ steps.plan.outputs.jobs_json }}
+      pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
 
     steps:
       - name: Harden runner
@@ -450,7 +451,7 @@ jobs:
     with:
       run-level: ${{ needs.gate.outputs.run_level }}
       changed-projects: ${{ needs.gate.outputs.changed_projects }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   # ╔════════════════════════════════════════════════════════════════╗
@@ -475,7 +476,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   cgit:
@@ -491,7 +492,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   cmark:
@@ -507,7 +508,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   corebinutils:
@@ -523,7 +524,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   genqrcode:
@@ -539,7 +540,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   neozip:
@@ -557,7 +558,7 @@ jobs:
       security-events: write
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   # ── C++ / Library Projects ──────────────────────────────────────
@@ -575,7 +576,7 @@ jobs:
       security-events: write
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   libnbtplusplus:
@@ -591,7 +592,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   tomlplusplus:
@@ -607,7 +608,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   # ── Java / Minecraft Projects ───────────────────────────────────
@@ -623,7 +624,7 @@ jobs:
     with:
       build-type: ${{ needs.gate.outputs.build_type }}
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     permissions:
       contents: read
       id-token: write
@@ -643,7 +644,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   # ── Container & Docker ──────────────────────────────────────────
@@ -661,7 +662,7 @@ jobs:
       packages: write
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   # ╔════════════════════════════════════════════════════════════════╗
@@ -684,7 +685,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   json4cpp-fuzz:
@@ -700,7 +701,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   json4cpp-amalgam:
@@ -716,7 +717,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   tomlplusplus-fuzz:
@@ -733,7 +734,7 @@ jobs:
       security-events: write
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   neozip-fuzz:
@@ -749,7 +750,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   mnv-codeql:
@@ -766,7 +767,7 @@ jobs:
       security-events: write
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   neozip-codeql:
@@ -784,7 +785,7 @@ jobs:
       security-events: write
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   # ╔════════════════════════════════════════════════════════════════╗
@@ -805,7 +806,7 @@ jobs:
       packages: write
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   meshmc-nix:
@@ -821,7 +822,7 @@ jobs:
       contents: read
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     secrets: inherit
 
   # ╔════════════════════════════════════════════════════════════════╗
@@ -837,7 +838,7 @@ jobs:
       source-ref: ${{ github.event.inputs.source-ref || github.ref }}
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       beta_source_only: ${{ fromJSON(needs.gate.outputs.jobs_json).beta_source_only }}
-      foreman-pipeline-id: ${{ needs.callback-start.outputs.pipeline_id }}
+      foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
     permissions:
       contents: write
       id-token: write

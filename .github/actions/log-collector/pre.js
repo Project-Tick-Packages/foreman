@@ -22,7 +22,7 @@ const baseUrl = getInput('foreman_base_url') || 'https://builds.projecttick.net'
 const apiToken = getInput('foreman_api_token');
 const jobName = getInput('job_name');
 
-// DEBUG: dump all INPUT_ env vars to understand what GHA passed us
+/* // DEBUG: dump all INPUT_ env vars to understand what GHA passed us
 console.log('=== Log Collector Pre-Step Debug ===');
 console.log('INPUT_CALLBACK_URL:', JSON.stringify(process.env.INPUT_CALLBACK_URL));
 console.log('INPUT_CALLBACK_TOKEN length:', (process.env.INPUT_CALLBACK_TOKEN || '').length);
@@ -33,7 +33,7 @@ console.log('Resolved values:');
 console.log('  callbackUrl:', JSON.stringify(callbackUrl));
 console.log('  pipelineId:', JSON.stringify(pipelineId));
 console.log('  apiToken length:', apiToken.length);
-console.log('=====================================');
+console.log('====================================='); */
 
 if (!callbackUrl && !pipelineId) {
   console.log('No Foreman destination; log collector disabled.');
