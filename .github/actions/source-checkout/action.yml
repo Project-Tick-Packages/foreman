@@ -66,6 +66,21 @@ inputs:
       step. "warn" prints an error annotation but allows the workflow to
       continue. Anything else is treated as "enforce".
     default: "enforce"
+  source-auth-token:
+    description: >
+      Token used to authenticate against the external source repository over
+      HTTPS. Composite actions cannot read `secrets.*` directly, so the calling
+      workflow must forward the secret explicitly, e.g.
+      `source-auth-token: ${{ secrets.PT_GITLAB_SOURCE_TOKEN }}`.
+      Ignored when source-repository is empty or not an https:// URL.
+    default: ""
+  source-auth-username:
+    description: >
+      Username paired with source-auth-token for HTTPS basic auth. Defaults to
+      "oauth2" which is the convention for GitLab personal/project access
+      tokens. Override via the calling workflow if needed, e.g.
+      `source-auth-username: ${{ vars.PT_GITLAB_SOURCE_USERNAME }}`.
+    default: "oauth2"
 
 outputs:
   source-mode:
@@ -189,8 +204,8 @@ runs:
         FETCH_DEPTH: ${{ inputs.fetch-depth }}
         INPUT_PATH: ${{ inputs.path }}
         SHOW_PROGRESS: ${{ inputs.show-progress }}
-        SOURCE_AUTH_TOKEN: ${{ secrets.PT_GITLAB_SOURCE_TOKEN || '' }}
-        SOURCE_AUTH_USERNAME: ${{ vars.PT_GITLAB_SOURCE_USERNAME || 'oauth2' }}
+        SOURCE_AUTH_TOKEN: ${{ inputs.source-auth-token }}
+        SOURCE_AUTH_USERNAME: ${{ inputs.source-auth-username }}
         SUBMODULES: ${{ inputs.submodules }}
         OBJECT_FORMAT: ${{ steps.resolve.outputs.object-format }}
       run: |
