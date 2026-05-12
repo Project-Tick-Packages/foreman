@@ -33,6 +33,7 @@ runs:
         Signed-By: /usr/share/keyrings/gnupg-keyring.gpg
         EOF
 
+        sudo add-apt-repository -y ppa:kubuntu-ppa/backports
         sudo apt-get -y update
 
     - name: Install host dependencies
