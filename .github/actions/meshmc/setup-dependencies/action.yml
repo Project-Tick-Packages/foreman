@@ -86,25 +86,22 @@ runs:
         modules: qtimageformats qtnetworkauth qt5compat
         cache: ${{ inputs.build-type == 'Debug' }}
 
-    # ── GPGME + Qt6 binding from source (Linux only) ───────────────────
+    # ── GPGME + GPGME++ + QGpgME from source (Linux only) ──────────────
     # MMCO's plugin signing needs the Qt6 QGpgME bindings against
-    # GPGME 2.x. Neither Ubuntu noble main (gpgme 1.18, no Qt6 binding)
-    # nor Kubuntu Backports (gpgme 1.24 + libqgpgmeqt6-dev 1.24, pins
-    # to the older C++ ABI) provide a usable combination, so we build
-    # GPGME from the upstream tarball against the aqt-managed Qt6
-    # toolkit. Result lands in /usr/local; CMake picks it up via
-    # `Gpgmepp` / `QGpgmeQt6` packages with no extra prefix hints.
-    - name: Build GPGME + QGpgME from source
+    # GPGME 2.x. As of the 2.0 release upstream split the bindings
+    # into three separate tarballs (gpgme, gpgmepp, qgpgme). We build
+    # all three against the aqt-managed Qt6 toolkit and install to
+    # /usr/local; downstream `find_package` resolves them.
+    - name: Build GPGME + GPGME++ + QGpgME from source
       if: ${{ runner.os == 'Linux' && inputs.msystem == '' }}
       shell: bash
       env:
-        GPGME_VERSION: "2.0.0"
+        GPGME_VERSION:   "2.0.0"
+        GPGMEPP_VERSION: "2.0.0"
+        QGPGME_VERSION:  "2.0.0"
       run: |
         set -euo pipefail
 
-        # aqt exports QT_ROOT_DIR (and sometimes Qt6_DIR). With
-        # `set -u` an unset Qt6_DIR would abort the step, so we
-        # access both via the `${var:-}` default-empty expansion.
         qt_root_dir="${QT_ROOT_DIR:-}"
         qt6_dir="${Qt6_DIR:-}"
         qmake6_bin=""
@@ -125,26 +122,60 @@ runs:
           exit 1
         fi
         echo "Using qmake6 at: $qmake6_bin"
+        export PATH="$(dirname "$qmake6_bin"):$PATH"
+
+        qt6_cmake_dir="${qt_root_dir:-${qt6_dir:+$(dirname "$qt6_dir")/Qt6}}"
+        echo "Qt6 CMake dir hint: $qt6_cmake_dir"
 
         build_root="$(mktemp -d)"
-        cd "$build_root"
 
+        cd "$build_root"
         curl -fsSLO \
           "https://www.gnupg.org/ftp/gcrypt/gpgme/gpgme-${GPGME_VERSION}.tar.bz2"
         tar xjf "gpgme-${GPGME_VERSION}.tar.bz2"
-        cd "gpgme-${GPGME_VERSION}"
-
-        export PATH="$(dirname "$qmake6_bin"):$PATH"
-        ./configure \
-          --prefix=/usr/local \
-          --enable-languages=cpp,qt6 \
-          --disable-gpg-test \
-          --disable-gpgsm-test \
-          --disable-g13-test
-
-        make -j"$(nproc)"
-        sudo make install
+        pushd "gpgme-${GPGME_VERSION}"
+          ./configure \
+            --prefix=/usr/local \
+            --disable-gpg-test \
+            --disable-gpgsm-test \
+            --disable-g13-test
+          make -j"$(nproc)"
+          sudo make install
+        popd
         sudo ldconfig
 
-        echo "CMAKE_PREFIX_PATH=/usr/local${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"
-        echo "PKG_CONFIG_PATH=/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+        export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+        export CMAKE_PREFIX_PATH="/usr/local${qt6_cmake_dir:+:$qt6_cmake_dir}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+
+        cd "$build_root"
+        curl -fsSLO \
+          "https://www.gnupg.org/ftp/gcrypt/gpgmepp/gpgmepp-${GPGMEPP_VERSION}.tar.xz"
+        tar xJf "gpgmepp-${GPGMEPP_VERSION}.tar.xz"
+        pushd "gpgmepp-${GPGMEPP_VERSION}"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DBUILD_TESTING=OFF
+          cmake --build build --parallel "$(nproc)"
+          sudo cmake --install build
+        popd
+        sudo ldconfig
+
+        cd "$build_root"
+        curl -fsSLO \
+          "https://www.gnupg.org/ftp/gcrypt/qgpgme/qgpgme-${QGPGME_VERSION}.tar.xz"
+        tar xJf "qgpgme-${QGPGME_VERSION}.tar.xz"
+        pushd "qgpgme-${QGPGME_VERSION}"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DBUILD_WITH_QT5=OFF \
+            -DBUILD_WITH_QT6=ON \
+            -DBUILD_TESTING=OFF
+          cmake --build build --parallel "$(nproc)"
+          sudo cmake --install build
+        popd
+        sudo ldconfig
+
+        echo "CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH" >> "$GITHUB_ENV"
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"    >> "$GITHUB_ENV"
