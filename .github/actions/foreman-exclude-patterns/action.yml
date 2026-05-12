@@ -1,0 +1,93 @@
+name: Foreman Exclude Patterns
+description: >
+  Read the gate-plan JSON returned by Foreman and expose the live
+  `quarantined_tests` list in shapes that test runners can consume
+  directly. The reusable workflows pass these as `--exclude-pattern`,
+  `-E "<regex>"`, `--tag ~quarantined`, etc.
+
+inputs:
+  plan_json:
+    description: >
+      The plan JSON string as returned by `/api/ci/github/gate-plan`
+      or `/api/pipelines/:id/ci-plan`. Pass the whole plan; the action
+      only reads `.quarantined_tests`.
+    required: true
+
+outputs:
+  patterns_json:
+    description: Raw JSON array of quarantined test patterns.
+    value: ${{ steps.compute.outputs.patterns_json }}
+  rspec_args:
+    description: >
+      Space-separated `--exclude-pattern '<p>'` flags ready for
+      `rspec`. Empty string when nothing is quarantined.
+    value: ${{ steps.compute.outputs.rspec_args }}
+  ctest_regex:
+    description: >
+      A single `(p1)|(p2)|…` regex ready for `ctest -E`. Empty when
+      nothing is quarantined.
+    value: ${{ steps.compute.outputs.ctest_regex }}
+  gtest_filter:
+    description: >
+      A `--gtest_filter=-p1:p2:…` argument for GoogleTest. Empty when
+      nothing is quarantined.
+    value: ${{ steps.compute.outputs.gtest_filter }}
+  count:
+    description: Number of patterns in the quarantine list.
+    value: ${{ steps.compute.outputs.count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compute exclude patterns from plan
+      id: compute
+      shell: bash
+      env:
+        PLAN_JSON: ${{ inputs.plan_json }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "${PLAN_JSON:-}" ]]; then
+          PLAN_JSON='{}'
+        fi
+
+        # Defensive: PLAN_JSON may come in via GHA output and lose its
+        # framing; tolerate that by defaulting to an empty list. We
+        # pass `-e` to make jq treat parse errors as failures so we
+        # can fall through to `[]` instead of letting a stray "0\n0"
+        # leak into `count`.
+        if ! patterns_json="$(printf '%s' "$PLAN_JSON" | jq -ce '.quarantined_tests // []' 2>/dev/null)"; then
+          patterns_json='[]'
+        fi
+
+        count="$(printf '%s' "$patterns_json" | jq 'length' 2>/dev/null || echo 0)"
+
+        rspec_args=""
+        ctest_regex=""
+        gtest_filter=""
+
+        if [[ "$count" -gt 0 ]]; then
+          # rspec: one --exclude-pattern flag per item, each quoted.
+          rspec_args="$(printf '%s' "$patterns_json" \
+            | jq -r 'map("--exclude-pattern \u0027" + . + "\u0027") | join(" ")')"
+
+          # ctest: single regex, items joined with |. Escape parens.
+          ctest_regex="$(printf '%s' "$patterns_json" \
+            | jq -r 'map("(" + . + ")") | join("|")')"
+
+          # gtest: leading -, items joined with :
+          gtest_filter="-$(printf '%s' "$patterns_json" \
+            | jq -r 'join(":")')"
+        fi
+
+        {
+          echo "patterns_json=$patterns_json"
+          echo "rspec_args=$rspec_args"
+          echo "ctest_regex=$ctest_regex"
+          echo "gtest_filter=$gtest_filter"
+          echo "count=$count"
+        } >> "$GITHUB_OUTPUT"
+
+        if [[ "$count" -gt 0 ]]; then
+          echo "::notice::Quarantine list active: $count pattern(s) excluded from test runs."
+        fi

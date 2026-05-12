@@ -17,6 +17,22 @@ on:
         description: Foreman pipeline ID for log streaming.
         type: string
         default: ""
+      foreman-plan:
+        description: >-
+          Compact JSON plan returned by Foreman gate. When present
+          enables quarantine-aware test runs, cost-aware runner
+          selection, and the cancel-check heartbeat. Leave empty
+          to disable.
+        type: string
+        default: ""
+      foreman-callback-url:
+        description: Foreman callback base URL for this pipeline.
+        type: string
+        default: ""
+      foreman-callback-token:
+        description: Foreman callback bearer token for this pipeline.
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -133,8 +149,30 @@ jobs:
           fi
           make -j"$(nproc)"
 
+      - name: Foreman cancel check
+        if: inputs.foreman-callback-url != ''
+        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-cancel-check@master
+        with:
+          callback_url:   ${{ inputs.foreman-callback-url }}
+          callback_token: ${{ inputs.foreman-callback-token }}
+          pipeline_id:    ${{ inputs.foreman-pipeline-id }}
+
+      - name: Foreman exclude patterns
+        if: inputs.foreman-plan != ''
+        id: exclude
+        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-exclude-patterns@master
+        with:
+          plan_json: ${{ inputs.foreman-plan }}
+
       - name: Test
         timeout-minutes: 25
+        env:
+          # The MNV `make test` target reads MNV_EXCLUDE_TESTS as a
+          # space-separated list of test names to skip. Quarantine
+          # patterns posted to Foreman are forwarded here verbatim;
+          # the Makefile uses substring matching so the bot's globs
+          # work as expected.
+          MNV_EXCLUDE_TESTS: ${{ steps.exclude.outputs.patterns_json }}
         run: |
           make "$TEST"
 

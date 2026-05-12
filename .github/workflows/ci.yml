@@ -278,7 +278,18 @@ jobs:
       changed_projects: ${{ steps.plan.outputs.changed_projects }}
       build_type: ${{ steps.plan.outputs.build_type }}
       jobs_json: ${{ steps.plan.outputs.jobs_json }}
+      # Live Foreman signals consumed by reusable workflows: quarantined
+      # test patterns, cost-aware downgrade flag, cache prediction. Passed
+      # downstream as `with: foreman-plan: …` so each workflow can hand
+      # them to the `foreman-exclude-patterns` / `foreman-runner-class`
+      # composite actions without making a second round-trip to Foreman.
+      foreman_plan: ${{ steps.plan.outputs.foreman_plan }}
+      quarantined_tests_count: ${{ steps.plan.outputs.quarantined_count }}
+      cost_aware_downgrade: ${{ steps.plan.outputs.cost_aware_downgrade }}
+      cache_predicted_miss: ${{ steps.plan.outputs.cache_predicted_miss }}
       pipeline_id: ${{ needs.callback-start.outputs.pipeline_id }}
+      callback_url: ${{ needs.callback-start.outputs.callback_url }}
+      callback_token: ${{ needs.callback-start.outputs.cb_auth }}
 
     steps:
       - name: Harden runner
@@ -407,14 +418,34 @@ jobs:
               > "$plan_file"
           fi
 
+          # Distil signals consumed by reusable workflows. Done up front
+          # so individual matrix jobs do not re-parse the plan JSON.
+          quarantined_count="$(jq '.quarantined_tests | length // 0' "$plan_file")"
+          cost_aware_downgrade="$(jq -r '.cost_aware.downgrade // false' "$plan_file")"
+          cache_predicted_miss="$(jq -r '.cache_prediction.predicted_miss // false' "$plan_file")"
+
+          # The full plan JSON gets compacted so it can travel as a
+          # single `outputs.foreman_plan` string (≤1 MB GHA limit).
+          foreman_plan="$(jq -c '.' "$plan_file")"
+
           {
             echo "run_level=$(jq -r '.run_level' "$plan_file")"
             echo "changed_projects=$(jq -r '.changed_projects // ""' "$plan_file")"
             echo "build_type=$(jq -r '.build_type' "$plan_file")"
             echo "jobs_json=$(jq -c '.jobs' "$plan_file")"
+            echo "quarantined_count=$quarantined_count"
+            echo "cost_aware_downgrade=$cost_aware_downgrade"
+            echo "cache_predicted_miss=$cache_predicted_miss"
+            # foreman_plan is multiline-safe by virtue of jq -c, but use
+            # the heredoc form anyway: future plans may include long
+            # explanation strings.
+            echo "foreman_plan<<__FOREMAN_PLAN_EOF__"
+            printf '%s\n' "$foreman_plan"
+            echo "__FOREMAN_PLAN_EOF__"
           } >> "$GITHUB_OUTPUT"
 
           runnable_jobs="$(jq -r '[.jobs | to_entries[] | select(.value == true) | .key] | join(", ")' "$plan_file")"
+          quarantined_preview="$(jq -r '.quarantined_tests // [] | .[0:5] | join(", ")' "$plan_file")"
 
           {
             echo "## Foreman CI Plan"
@@ -422,6 +453,9 @@ jobs:
             echo "- Run level: $(jq -r '.run_level' "$plan_file")"
             echo "- Changed projects: $(jq -r '.changed_projects // ""' "$plan_file")"
             echo "- Runnable jobs: ${runnable_jobs:-none}"
+            echo "- Quarantined tests: ${quarantined_count}${quarantined_preview:+ — first 5: $quarantined_preview}"
+            echo "- Cost-aware downgrade: $cost_aware_downgrade ($(jq -r '.cost_aware.reason // ""' "$plan_file"))"
+            echo "- Cache predicted miss: $cache_predicted_miss"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report Gate job completed
@@ -452,6 +486,9 @@ jobs:
       run-level: ${{ needs.gate.outputs.run_level }}
       changed-projects: ${{ needs.gate.outputs.changed_projects }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   # ╔════════════════════════════════════════════════════════════════╗
@@ -477,6 +514,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   cgit:
@@ -493,6 +533,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   cmark:
@@ -509,6 +552,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   corebinutils:
@@ -525,6 +571,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   genqrcode:
@@ -541,6 +590,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   neozip:
@@ -559,6 +611,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   # ── C++ / Library Projects ──────────────────────────────────────
@@ -577,6 +632,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   libnbtplusplus:
@@ -593,6 +651,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   tomlplusplus:
@@ -609,6 +670,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   # ── Java / Minecraft Projects ───────────────────────────────────
@@ -625,6 +689,9 @@ jobs:
       build-type: ${{ needs.gate.outputs.build_type }}
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     permissions:
       contents: read
       id-token: write
@@ -645,6 +712,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   # ── Container & Docker ──────────────────────────────────────────
@@ -663,6 +733,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   # ╔════════════════════════════════════════════════════════════════╗
@@ -686,6 +759,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   json4cpp-fuzz:
@@ -702,6 +778,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   json4cpp-amalgam:
@@ -718,6 +797,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   tomlplusplus-fuzz:
@@ -735,6 +817,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   neozip-fuzz:
@@ -751,6 +836,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   mnv-codeql:
@@ -768,6 +856,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   neozip-codeql:
@@ -786,6 +877,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   # ╔════════════════════════════════════════════════════════════════╗
@@ -807,6 +901,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   meshmc-nix:
@@ -823,6 +920,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   foreman20:
@@ -840,6 +940,9 @@ jobs:
     with:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     secrets: inherit
 
   # ╔════════════════════════════════════════════════════════════════╗
@@ -856,6 +959,9 @@ jobs:
       source-repository: ${{ github.event.inputs.source-repository || '' }}
       beta_source_only: ${{ fromJSON(needs.gate.outputs.jobs_json).beta_source_only }}
       foreman-pipeline-id: ${{ needs.gate.outputs.pipeline_id }}
+      foreman-plan: ${{ needs.gate.outputs.foreman_plan }}
+      foreman-callback-url: ${{ needs.gate.outputs.callback_url }}
+      foreman-callback-token: ${{ needs.gate.outputs.callback_token }}
     permissions:
       contents: write
       id-token: write

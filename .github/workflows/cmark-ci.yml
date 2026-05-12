@@ -17,6 +17,22 @@ on:
         description: Foreman pipeline ID for log streaming.
         type: string
         default: ""
+      foreman-plan:
+        description: >-
+          Compact JSON plan returned by Foreman gate. When present
+          enables quarantine-aware test runs, cost-aware runner
+          selection, and the cancel-check heartbeat. Leave empty
+          to disable.
+        type: string
+        default: ""
+      foreman-callback-url:
+        description: Foreman callback base URL for this pipeline.
+        type: string
+        default: ""
+      foreman-callback-token:
+        description: Foreman callback bearer token for this pipeline.
+        type: string
+        default: ""
 
 jobs:
   linter:
@@ -113,15 +129,45 @@ jobs:
         with:
           source-repository: ${{ inputs.source-repository || '' }}
           show-progress: 'false'
+      - name: Foreman cancel check
+        if: inputs.foreman-callback-url != ''
+        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-cancel-check@master
+        with:
+          callback_url:   ${{ inputs.foreman-callback-url }}
+          callback_token: ${{ inputs.foreman-callback-token }}
+          pipeline_id:    ${{ inputs.foreman-pipeline-id }}
+      - name: Foreman exclude patterns
+        if: inputs.foreman-plan != ''
+        id: exclude
+        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-exclude-patterns@master
+        with:
+          plan_json: ${{ inputs.foreman-plan }}
       - name: Build and test
         working-directory: ${{ inputs.source-repository != '' && '.' || 'cmark' }}
+        env:
+          QUARANTINE_REGEX: ${{ steps.exclude.outputs.ctest_regex }}
         run: |
           cmake \
             -DBUILD_SHARED_LIBS=${{ matrix.cmake_shared }} \
             -DCMAKE_BUILD_TYPE=Debug \
             -S . -B build
           cmake --build build
-          ${{ matrix.test_env }} ctest --test-dir build --output-on-failure
+          ctest_args=( --test-dir build --output-on-failure --output-junit junit-cmark.xml )
+          if [[ -n "${QUARANTINE_REGEX:-}" ]]; then
+            echo "::notice::Excluding quarantined tests: $QUARANTINE_REGEX"
+            ctest_args+=( -E "$QUARANTINE_REGEX" )
+          fi
+          ${{ matrix.test_env }} ctest "${ctest_args[@]}"
+      - name: Foreman JUnit upload
+        if: always() && inputs.foreman-callback-url != ''
+        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-junit-upload@master
+        with:
+          callback_url:   ${{ inputs.foreman-callback-url }}
+          callback_token: ${{ inputs.foreman-callback-token }}
+          pipeline_id:    ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name: cmark-posix-${{ matrix.os }}-${{ matrix.cc }}-${{ matrix.build_type }}
+          junit_path: ${{ inputs.source-repository != '' && '.' || 'cmark' }}/build/junit-cmark.xml
 
   windows:
     runs-on: windows-latest
@@ -148,16 +194,39 @@ jobs:
           source-repository: ${{ inputs.source-repository || '' }}
           show-progress: 'false'
       - uses: ilammy/msvc-dev-cmd@v1
+      - name: Foreman exclude patterns
+        if: inputs.foreman-plan != ''
+        id: exclude
+        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-exclude-patterns@master
+        with:
+          plan_json: ${{ inputs.foreman-plan }}
       - name: Build and test
         working-directory: ${{ inputs.source-repository != '' && '.' || 'cmark' }}
+        env:
+          QUARANTINE_REGEX: ${{ steps.exclude.outputs.ctest_regex }}
+        shell: bash
         run: |
-          cmake ^
-              -DBUILD_SHARED_LIBS=${{ matrix.cmake_shared }} ^
-              -DCMAKE_BUILD_TYPE=Debug ^
+          cmake \
+              -DBUILD_SHARED_LIBS=${{ matrix.cmake_shared }} \
+              -DCMAKE_BUILD_TYPE=Debug \
               -S . -B build
           cmake --build build
-          ctest --test-dir build -C Debug --output-on-failure
-        shell: cmd
+          ctest_args=( --test-dir build -C Debug --output-on-failure --output-junit junit-cmark.xml )
+          if [[ -n "${QUARANTINE_REGEX:-}" ]]; then
+            echo "::notice::Excluding quarantined tests: $QUARANTINE_REGEX"
+            ctest_args+=( -E "$QUARANTINE_REGEX" )
+          fi
+          ctest "${ctest_args[@]}"
+      - name: Foreman JUnit upload
+        if: always() && inputs.foreman-callback-url != ''
+        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-junit-upload@master
+        with:
+          callback_url:   ${{ inputs.foreman-callback-url }}
+          callback_token: ${{ inputs.foreman-callback-token }}
+          pipeline_id:    ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name: cmark-windows-${{ matrix.build_type }}
+          junit_path: ${{ inputs.source-repository != '' && '.' || 'cmark' }}/build/junit-cmark.xml
       - name: Upload artifact
         if: ${{ matrix.build_type == 'static' }}
         uses: actions/upload-artifact@v7

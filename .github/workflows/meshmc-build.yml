@@ -22,6 +22,22 @@ on:
         description: Foreman pipeline ID for log streaming.
         type: string
         default: ""
+      foreman-plan:
+        description: >-
+          Compact JSON plan returned by Foreman gate. When present
+          enables quarantine-aware test runs, cost-aware runner
+          selection, and the cancel-check heartbeat. Leave empty
+          to disable.
+        type: string
+        default: ""
+      foreman-callback-url:
+        description: Foreman callback base URL for this pipeline.
+        type: string
+        default: ""
+      foreman-callback-token:
+        description: Foreman callback bearer token for this pipeline.
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       build-type:
@@ -465,7 +481,12 @@ jobs:
 
       - name: Import GPG signing key (Windows)
         id: gpg-import-windows
-        if: ${{ runner.os == 'Windows' }}
+        # MSVC builds compile PluginSignature.cpp into a stub because
+        # upstream gpgme has no working MSVC build (autotools + ABI
+        # incompatibilities). MinGW matrix entries — if/when they are
+        # re-enabled — do link gpgmepp via MSYS2, so signing remains
+        # available there.
+        if: ${{ runner.os == 'Windows' && matrix.cmake-preset != 'windows_msvc' }}
         shell: bash
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -484,19 +505,27 @@ jobs:
             exit 0
           fi
 
-          # GNUPGHOME under a short path keeps Windows path-length quirks out.
-          GNUPGHOME_WIN="${RUNNER_TEMP}/gnupg-mmco"
-          mkdir -p "$GNUPGHOME_WIN"
+          # RUNNER_TEMP on Windows is a Windows-style path (e.g. D:\a\_temp).
+          # Git Bash's gpg.exe is a native Windows binary linked against
+          # libassuan, so it needs the directory passed as a Windows path —
+          # but `mkdir -p` and the shell need a POSIX path. Compute both.
+          if command -v cygpath >/dev/null 2>&1; then
+            GNUPGHOME_POSIX="$(cygpath -u "$RUNNER_TEMP")/gnupg-mmco"
+            mkdir -p "$GNUPGHOME_POSIX"
+            GNUPGHOME_WIN="$(cygpath -w "$GNUPGHOME_POSIX")"
+          else
+            # Fallback: assume RUNNER_TEMP is already POSIX-compatible.
+            GNUPGHOME_POSIX="${RUNNER_TEMP}/gnupg-mmco"
+            mkdir -p "$GNUPGHOME_POSIX"
+            GNUPGHOME_WIN="$GNUPGHOME_POSIX"
+          fi
+
+          # Always export GNUPGHOME in Windows form for the gpg.exe invocations.
           export GNUPGHOME="$GNUPGHOME_WIN"
 
           printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "${GPG_PRIVATE_KEY_ID}:6:" | gpg --batch --import-ownertrust
 
-          # Translate to a Windows path so CMake / Python (which runs the
-          # signing script) can resolve it.
-          if command -v cygpath >/dev/null 2>&1; then
-            GNUPGHOME_WIN="$(cygpath -w "$GNUPGHOME_WIN")"
-          fi
           echo "MESHMC_PLUGIN_GPG_HOMEDIR=$GNUPGHOME_WIN" >> "$GITHUB_ENV"
           echo "MESHMC_PLUGIN_GPG_KEY_ID=$GPG_PRIVATE_KEY_ID" >> "$GITHUB_ENV"
 

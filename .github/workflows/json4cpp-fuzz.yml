@@ -12,6 +12,22 @@ on:
         description: Foreman pipeline ID for log streaming.
         type: string
         default: ""
+      foreman-plan:
+        description: >-
+          Compact JSON plan returned by Foreman gate. When present
+          enables quarantine-aware test runs, cost-aware runner
+          selection, and the cancel-check heartbeat. Leave empty
+          to disable.
+        type: string
+        default: ""
+      foreman-callback-url:
+        description: Foreman callback base URL for this pipeline.
+        type: string
+        default: ""
+      foreman-callback-token:
+        description: Foreman callback bearer token for this pipeline.
+        type: string
+        default: ""
 
 permissions:
   contents: read

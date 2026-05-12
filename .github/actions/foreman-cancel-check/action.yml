@@ -1,0 +1,127 @@
+name: Foreman Cancel Check
+description: >
+  Poll Foreman to see whether this pipeline should self-cancel. Used
+  by long-running matrix jobs so that `bot, cancel`, supersession,
+  and out-of-band failures stop the run quickly without waiting for
+  the GitHub Actions cancel API to propagate.
+
+  Drop this step inside a long-running job — typically before each
+  expensive matrix slice. It exits the step with code 0 when there
+  is nothing to do and with code 75 (`EX_TEMPFAIL`) when a cancel
+  is requested. A follow-up step should call `gh run cancel` so
+  GitHub records the run as `cancelled`.
+
+inputs:
+  callback_url:
+    description: Foreman callback base URL for this pipeline.
+    required: false
+    default: ""
+  callback_token:
+    description: Foreman callback bearer token for this pipeline.
+    required: false
+    default: ""
+  pipeline_id:
+    description: Foreman pipeline ID. Only required when `callback_url` is empty.
+    required: false
+    default: ""
+  foreman_base_url:
+    description: Public Foreman base URL.
+    required: false
+    default: https://builds.projecttick.net
+  fail_on_cancel:
+    description: >
+      When `true` (default), the step exits non-zero so the job fails
+      fast. When `false` only sets outputs.
+    required: false
+    default: "true"
+
+outputs:
+  cancel_requested:
+    description: "`true` when Foreman has marked this pipeline cancelled/superseded/failed."
+    value: ${{ steps.poll.outputs.cancel_requested }}
+  reason:
+    description: Human-readable reason string.
+    value: ${{ steps.poll.outputs.reason }}
+  pipeline_status:
+    description: Raw pipeline.status from Foreman.
+    value: ${{ steps.poll.outputs.pipeline_status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Poll Foreman for cancel state
+      id: poll
+      shell: bash
+      env:
+        CALLBACK_URL:     ${{ inputs.callback_url }}
+        CALLBACK_TOKEN:   ${{ inputs.callback_token }}
+        PIPELINE_ID:      ${{ inputs.pipeline_id }}
+        FOREMAN_BASE_URL: ${{ inputs.foreman_base_url }}
+        FAIL_ON_CANCEL:   ${{ inputs.fail_on_cancel }}
+      run: |
+        set -euo pipefail
+
+        url=""
+        if [[ -n "$CALLBACK_URL" ]]; then
+          url="${CALLBACK_URL%/}"
+          url="${url%/callback}"
+          # callback_url shape: .../api/pipelines/<id>/callback
+          # cancel-check    is: .../api/pipelines/<id>/cancel-check
+          url="${url}/cancel-check"
+        elif [[ -n "$PIPELINE_ID" ]]; then
+          url="${FOREMAN_BASE_URL%/}/api/pipelines/${PIPELINE_ID}/cancel-check"
+        else
+          echo "No callback destination configured; skipping cancel check."
+          {
+            echo "cancel_requested=false"
+            echo "reason=no_endpoint"
+            echo "pipeline_status=unknown"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [[ -z "$CALLBACK_TOKEN" ]]; then
+          echo "::warning::Cancel-check has no token; skipping."
+          {
+            echo "cancel_requested=false"
+            echo "reason=no_token"
+            echo "pipeline_status=unknown"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        response="$(mktemp)"
+        http_code="$(curl \
+          --silent --show-error \
+          --output "$response" \
+          --write-out '%{http_code}' \
+          --max-time 10 \
+          --header "Authorization: Bearer $CALLBACK_TOKEN" \
+          "$url" || echo "000")"
+
+        if [[ "$http_code" != "200" ]]; then
+          echo "::warning::cancel-check returned HTTP $http_code; treating as no-cancel."
+          {
+            echo "cancel_requested=false"
+            echo "reason=http_$http_code"
+            echo "pipeline_status=unknown"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        cancel_requested="$(jq -r '.cancel_requested // false' "$response")"
+        reason="$(jq           -r '.reason           // ""'    "$response")"
+        pipeline_status="$(jq  -r '.pipeline_status  // ""'    "$response")"
+
+        {
+          echo "cancel_requested=$cancel_requested"
+          echo "reason=$reason"
+          echo "pipeline_status=$pipeline_status"
+        } >> "$GITHUB_OUTPUT"
+
+        if [[ "$cancel_requested" == "true" ]]; then
+          echo "::warning::Foreman requests cancel (reason=$reason, status=$pipeline_status)."
+          if [[ "$FAIL_ON_CANCEL" == "true" ]]; then
+            exit 75
+          fi
+        fi

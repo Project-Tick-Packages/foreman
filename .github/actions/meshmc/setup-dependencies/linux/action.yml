@@ -18,7 +18,8 @@ runs:
           dpkg-dev \
           ninja-build extra-cmake-modules pkg-config scdoc \
           gamemode-dev libarchive-dev libqrencode-dev \
-          libxcb-cursor-dev libtomlplusplus-dev libvulkan-dev
+          libxcb-cursor-dev libtomlplusplus-dev libvulkan-dev \
+          qgpgme gpgmepp
 
     - name: Setup AppImage tooling
       shell: bash

@@ -1,0 +1,70 @@
+name: Foreman Runner Class
+description: >
+  Decide which `runs-on` label a matrix job should use based on the
+  cost-aware scheduler decision in the gate plan. When the scheduler
+  is recommending a downgrade (soft / hard GHA budget breach), this
+  rewrites `ubuntu-latest-medium` → `ubuntu-latest` (and similar).
+  When no downgrade is needed, the desired label is returned verbatim.
+
+inputs:
+  plan_json:
+    description: >
+      The plan JSON as returned by `/api/ci/github/gate-plan`. Only
+      `.cost_aware.downgrade` is read.
+    required: true
+  desired:
+    description: >
+      The runner label the workflow would like to use under normal
+      conditions (e.g. `ubuntu-latest-medium`).
+    required: true
+  fallback:
+    description: >
+      The runner label to use when the scheduler says "downgrade".
+      Defaults to `ubuntu-latest`.
+    required: false
+    default: ubuntu-latest
+
+outputs:
+  runs_on:
+    description: The label the caller should set on `runs-on:`.
+    value: ${{ steps.decide.outputs.runs_on }}
+  downgraded:
+    description: "`true` when the desired runner was downgraded."
+    value: ${{ steps.decide.outputs.downgraded }}
+  reason:
+    description: The reason string from Foreman (`soft_budget`, `hard_ceiling`, `within_budget`, …).
+    value: ${{ steps.decide.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    - name: Apply cost-aware decision
+      id: decide
+      shell: bash
+      env:
+        PLAN_JSON: ${{ inputs.plan_json }}
+        DESIRED:   ${{ inputs.desired }}
+        FALLBACK:  ${{ inputs.fallback }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "${PLAN_JSON:-}" ]]; then
+          PLAN_JSON='{}'
+        fi
+
+        downgrade="$(printf '%s' "$PLAN_JSON" | jq -r '.cost_aware.downgrade // false')"
+        reason="$(printf '%s' "$PLAN_JSON" | jq -r '.cost_aware.reason    // "unknown"')"
+        pct="$(printf '%s' "$PLAN_JSON"    | jq -r '.cost_aware.pct_used  // "null"')"
+
+        if [[ "$downgrade" == "true" ]]; then
+          runs_on="$FALLBACK"
+          echo "::notice::Cost-aware scheduler is downgrading $DESIRED → $FALLBACK (reason=$reason, pct_used=$pct)."
+        else
+          runs_on="$DESIRED"
+        fi
+
+        {
+          echo "runs_on=$runs_on"
+          echo "downgraded=$downgrade"
+          echo "reason=$reason"
+        } >> "$GITHUB_OUTPUT"

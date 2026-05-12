@@ -1,0 +1,178 @@
+name: Foreman JUnit Upload
+description: >
+  Parse a JUnit XML file (or a glob of them) into Foreman's
+  `/callback/test_results` payload shape and POST it. Backs the
+  `bot, flake?` test-level statistics and the dashboard test-history
+  widget. Idempotent: safe to call multiple times per job.
+
+inputs:
+  callback_url:
+    description: Foreman callback base URL for this pipeline.
+    required: false
+    default: ""
+  callback_token:
+    description: Foreman callback bearer token for this pipeline.
+    required: false
+    default: ""
+  pipeline_id:
+    description: Foreman pipeline ID. Only required when `callback_url` is empty.
+    required: false
+    default: ""
+  foreman_base_url:
+    description: Public Foreman base URL.
+    required: false
+    default: https://builds.projecttick.net
+  foreman_api_token:
+    description: Admin API token. Used when callback creds are absent.
+    required: false
+    default: ""
+  job_name:
+    description: Job name to attach to every test case.
+    required: true
+  junit_path:
+    description: >
+      Glob (or single file path) for JUnit XML reports. Defaults to
+      `**/junit*.xml`. Missing files are tolerated silently.
+    required: false
+    default: "**/junit*.xml"
+  max_cases:
+    description: Safety cap on the number of cases posted per call.
+    required: false
+    default: "5000"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+
+    - name: Convert JUnit XML to Foreman payload and POST
+      shell: bash
+      env:
+        CALLBACK_URL:      ${{ inputs.callback_url }}
+        CALLBACK_TOKEN:    ${{ inputs.callback_token }}
+        PIPELINE_ID:       ${{ inputs.pipeline_id }}
+        FOREMAN_BASE_URL:  ${{ inputs.foreman_base_url }}
+        FOREMAN_API_TOKEN: ${{ inputs.foreman_api_token }}
+        JOB_NAME:          ${{ inputs.job_name }}
+        JUNIT_PATH:        ${{ inputs.junit_path }}
+        MAX_CASES:         ${{ inputs.max_cases }}
+      run: |
+        set -euo pipefail
+
+        payload_file="$(mktemp --suffix=.json)"
+
+        # ---------------------------------------------------------------
+        # Resolve where to POST.
+        # ---------------------------------------------------------------
+        post_url=""
+        auth_header=""
+        if [[ -n "$CALLBACK_URL" && -n "$CALLBACK_TOKEN" ]]; then
+          post_url="${CALLBACK_URL%/}/test_results"
+          auth_header="Authorization: Bearer $CALLBACK_TOKEN"
+        elif [[ -n "$PIPELINE_ID" && -n "$FOREMAN_API_TOKEN" ]]; then
+          post_url="${FOREMAN_BASE_URL%/}/api/pipelines/${PIPELINE_ID}/admin-callback/test_results"
+          auth_header="Authorization: Bearer $FOREMAN_API_TOKEN"
+        else
+          echo "No Foreman destination configured for test-results upload; skipping."
+          exit 0
+        fi
+
+        # ---------------------------------------------------------------
+        # Parse JUnit XML → Foreman payload.
+        # ---------------------------------------------------------------
+        python3 - <<'PY' "$JOB_NAME" "$JUNIT_PATH" "$MAX_CASES" "$payload_file"
+        import glob, json, os, sys, xml.etree.ElementTree as ET
+
+        job_name, junit_path, max_cases_s, out_path = sys.argv[1:5]
+        max_cases = int(max_cases_s)
+
+        files = sorted(set(glob.glob(junit_path, recursive=True)))
+        cases = []
+
+        def classify(case):
+            # JUnit dialect varies: presence of <failure>, <error>,
+            # <skipped> children, or `status` attribute.
+            for child in case:
+                tag = child.tag.lower().rsplit('}', 1)[-1]
+                if tag == 'failure':
+                    return 'failed', (child.get('message') or (child.text or ''))[:4000]
+                if tag == 'error':
+                    return 'error',   (child.get('message') or (child.text or ''))[:4000]
+                if tag == 'skipped':
+                    return 'skipped', ''
+            status_attr = (case.get('status') or '').lower()
+            if status_attr in ('failed', 'failure'): return 'failed', ''
+            if status_attr in ('error',):            return 'error',  ''
+            if status_attr in ('skipped', 'skip'):   return 'skipped', ''
+            return 'passed', ''
+
+        for path in files:
+            try:
+                tree = ET.parse(path)
+            except ET.ParseError as exc:
+                print(f"::warning::Could not parse {path}: {exc}")
+                continue
+
+            root = tree.getroot()
+            suites = root.iter('{*}testsuite') if root.tag.endswith('testsuites') else [root]
+            for suite in suites:
+                classname_default = suite.get('name') or ''
+                for case in suite.iter('{*}testcase'):
+                    name      = case.get('name') or ''
+                    classname = case.get('classname') or classname_default
+                    file_attr = case.get('file') or ''
+                    line_attr = case.get('line') or ''
+
+                    if file_attr and line_attr:
+                        test_name = f"{file_attr}:{line_attr}"
+                    elif classname and name:
+                        test_name = f"{classname}.{name}"
+                    else:
+                        test_name = name or "unknown"
+
+                    duration_s = float(case.get('time') or 0)
+                    duration_ms = int(duration_s * 1000)
+
+                    status, msg = classify(case)
+                    cases.append({
+                        "test_name": test_name[:1024],
+                        "classname": classname[:1024],
+                        "status": status,
+                        "duration_ms": duration_ms,
+                        "failure_message": msg
+                    })
+                    if len(cases) >= max_cases:
+                        print(f"::warning::Cap of {max_cases} test cases reached; dropping the rest.")
+                        break
+                if len(cases) >= max_cases:
+                    break
+            if len(cases) >= max_cases:
+                break
+
+        with open(out_path, 'w') as f:
+            json.dump({"job_name": job_name, "cases": cases}, f)
+
+        print(f"Parsed {len(cases)} case(s) from {len(files)} file(s).")
+        PY
+
+        case_count="$(jq '.cases | length' "$payload_file")"
+        if [[ "$case_count" -eq 0 ]]; then
+          echo "No test cases parsed; nothing to upload."
+          exit 0
+        fi
+
+        # ---------------------------------------------------------------
+        # POST.
+        # ---------------------------------------------------------------
+        curl \
+          --silent --show-error --fail \
+          --retry 3 --retry-all-errors \
+          --request POST \
+          --header "$auth_header" \
+          --header "Content-Type: application/json" \
+          --data "@$payload_file" \
+          "$post_url" \
+          || echo "::warning::Failed to upload test results to Foreman."
