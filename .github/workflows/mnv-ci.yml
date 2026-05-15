@@ -100,13 +100,16 @@ jobs:
         working-directory: ${{ inputs.source-repository != '' && '.' || 'mnv' }}
 
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - name: Checkout repository
         uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -148,21 +151,6 @@ jobs:
               --enable-gui=gtk3
           fi
           make -j"$(nproc)"
-
-      - name: Foreman cancel check
-        if: inputs.foreman-callback-url != ''
-        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-cancel-check@master
-        with:
-          callback_url:   ${{ inputs.foreman-callback-url }}
-          callback_token: ${{ inputs.foreman-callback-token }}
-          pipeline_id:    ${{ inputs.foreman-pipeline-id }}
-
-      - name: Foreman exclude patterns
-        if: inputs.foreman-plan != ''
-        id: exclude
-        uses: Project-Tick-Infrastructure/github-actions/.github/actions/foreman-exclude-patterns@master
-        with:
-          plan_json: ${{ inputs.foreman-plan }}
 
       - name: Test
         timeout-minutes: 25
@@ -254,6 +242,16 @@ jobs:
   #       if: contains(fromJSON('["default", "all-interp", "full-debug"]'), matrix.preset)
   #       timeout-minutes: 120
   #       run: ctest --preset ${{ matrix.preset }} --output-on-failure --extra-verbose
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   macos:
     runs-on: ${{ matrix.runner }}
@@ -276,13 +274,16 @@ jobs:
         working-directory: ${{ inputs.source-repository != '' && '.' || 'mnv' }}
 
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - name: Checkout repository
         uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -310,3 +311,13 @@ jobs:
         timeout-minutes: 25
         run: |
           make "$TEST"
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}

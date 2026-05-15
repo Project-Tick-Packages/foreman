@@ -48,13 +48,16 @@ jobs:
         working-directory: ${{ inputs.source-repository != '' && '.' || 'genqrcode' }}
         shell: bash
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
@@ -82,6 +85,16 @@ jobs:
         run: cmake --build build --config "$BUILD_TYPE" -j 2
       - name: Test
         run: ctest --test-dir build -C "$BUILD_TYPE"
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   autotools:
     runs-on: ${{ matrix.os }}
@@ -93,13 +106,16 @@ jobs:
       run:
         working-directory: ${{ inputs.source-repository != '' && '.' || 'genqrcode' }}
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
@@ -116,3 +132,13 @@ jobs:
         run: make check
       - name: Distcheck
         run: make -j 2 distcheck
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}

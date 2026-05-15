@@ -1,0 +1,178 @@
+# Copyright (C) Project Tick
+# SPDX-License-Identifier: Apache-2.0
+#
+# Composite "init" action — drop this as the FIRST step of every job
+# that should be visible to Foreman. It bundles together:
+#
+#   1. log-collector            — streams stdout/stderr of subsequent
+#                                  steps back to Foreman as LogChunks.
+#   2. foreman-cancel-check     — exits the step with code 75 when
+#                                  Foreman has cancelled / superseded
+#                                  / failed this pipeline server-side.
+#   3. foreman-job-callback     — emits a `running` job callback so
+#                                  the dashboard shows the matrix
+#                                  cell as in-flight.
+#   4. foreman-exclude-patterns — parses `plan_json`'s
+#                                  `.quarantined_tests` and exposes
+#                                  rspec / ctest / gtest filters as
+#                                  step outputs so downstream test
+#                                  steps can pipe them in directly.
+#
+# All four sub-actions are best-effort: when callback credentials
+# are missing (push-event fork, secrets-less PR, manual dispatch
+# without Foreman) the action degrades to a no-op and the job
+# continues normally.
+#
+# Pair this with `foreman-job-finalize` as the LAST step (under
+# `if: always()`). The two together replace the historical pattern
+# of pasting log-collector + cancel-check + exclude-patterns + ad-hoc
+# curl calls in every job, which had drifted across 40+ workflow
+# files.
+
+name: Foreman Job Wrapper
+description: >
+  Bundles log-collector, cancel-check, job-running callback, and
+  quarantine pattern resolution into a single first-of-job step.
+
+inputs:
+  # ── Callback wiring ─────────────────────────────────────────────
+  callback_url:
+    description: Foreman callback base URL for this pipeline.
+    required: false
+    default: ""
+  callback_token:
+    description: Foreman callback bearer token for this pipeline.
+    required: false
+    default: ""
+  pipeline_id:
+    description: Foreman pipeline ID. Required when callback_url is empty.
+    required: false
+    default: ""
+  foreman_base_url:
+    description: Public Foreman base URL.
+    required: false
+    default: https://builds.projecttick.net
+  foreman_api_token:
+    description: Foreman admin API token (admin-auth fallback).
+    required: false
+    default: ""
+
+  # ── Display ─────────────────────────────────────────────────────
+  job_name:
+    description: Display name of the current job. Usually `${{ github.job }}`.
+    required: true
+
+  # ── Behaviour toggles ───────────────────────────────────────────
+  plan_json:
+    description: >
+      Foreman gate-plan JSON. When non-empty, exclude-patterns are
+      computed from `.quarantined_tests` and exposed as outputs.
+    required: false
+    default: ""
+  skip_cancel_check:
+    description: >
+      Set to `true` to disable the cancel-check sub-step. Useful for
+      very short jobs where the round-trip is not worth it.
+    required: false
+    default: "false"
+  skip_log_collector:
+    description: >
+      Set to `true` to disable the log-collector sub-step. Pre-existing
+      callers that already use the action standalone should leave this
+      at `false`.
+    required: false
+    default: "false"
+  fail_on_cancel:
+    description: >
+      Propagated to foreman-cancel-check: when `true` (default) the
+      step exits 75 on a cancel request so the job stops fast.
+    required: false
+    default: "true"
+
+outputs:
+  # ── Quarantine pattern outputs (re-exported from
+  # foreman-exclude-patterns so downstream test steps can just
+  # reference `steps.foreman.outputs.<x>` without depending on the
+  # sub-step id staying stable).
+  patterns_json:
+    description: Raw JSON array of quarantined test patterns.
+    value: ${{ steps.exclude.outputs.patterns_json }}
+  rspec_args:
+    description: "Space-separated --exclude-pattern flags for rspec."
+    value: ${{ steps.exclude.outputs.rspec_args }}
+  ctest_regex:
+    description: "Single regex for ctest -E (joined with |)."
+    value: ${{ steps.exclude.outputs.ctest_regex }}
+  gtest_filter:
+    description: "--gtest_filter=-p1:p2:... argument for GoogleTest."
+    value: ${{ steps.exclude.outputs.gtest_filter }}
+  quarantine_count:
+    description: Number of patterns in the quarantine list.
+    value: ${{ steps.exclude.outputs.count }}
+
+  # ── Cancel-check passthrough
+  cancel_requested:
+    description: "true when Foreman has marked this pipeline cancelled."
+    value: ${{ steps.cancel.outputs.cancel_requested }}
+  cancel_reason:
+    description: Reason string returned by Foreman.
+    value: ${{ steps.cancel.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    # ── 1. Start log streaming. We start it FIRST so that any output
+    # from the cancel-check / callback steps below is captured too.
+    - name: Foreman log collector
+      if: inputs.skip_log_collector != 'true' && (inputs.pipeline_id != '' || inputs.callback_url != '')
+      uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      with:
+        callback_url:      ${{ inputs.callback_url }}
+        callback_token:    ${{ inputs.callback_token }}
+        pipeline_id:       ${{ inputs.pipeline_id }}
+        foreman_base_url:  ${{ inputs.foreman_base_url }}
+        foreman_api_token: ${{ inputs.foreman_api_token }}
+        job_name:          ${{ inputs.job_name }}
+
+    # ── 2. Server-side cancel poll. Cheaper than waiting on GHA's
+    # cancel API to propagate; exits the step with 75 when cancel
+    # is requested (so the job fails fast).
+    - name: Foreman cancel check
+      id: cancel
+      if: inputs.skip_cancel_check != 'true' && (inputs.callback_url != '' || inputs.pipeline_id != '')
+      uses: Project-Tick/Project-Tick/.github/actions/foreman-cancel-check@master
+      with:
+        callback_url:     ${{ inputs.callback_url }}
+        callback_token:   ${{ inputs.callback_token }}
+        pipeline_id:      ${{ inputs.pipeline_id }}
+        foreman_base_url: ${{ inputs.foreman_base_url }}
+        fail_on_cancel:   ${{ inputs.fail_on_cancel }}
+
+    # ── 3. Announce the job as "running" so the dashboard reflects
+    # in-flight matrix cells. Best-effort — failure here must not
+    # break the job.
+    - name: Foreman job-running callback
+      if: inputs.pipeline_id != '' || inputs.callback_url != ''
+      uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+      with:
+        callback_url:      ${{ inputs.callback_url }}
+        callback_token:    ${{ inputs.callback_token }}
+        pipeline_id:       ${{ inputs.pipeline_id }}
+        foreman_base_url:  ${{ inputs.foreman_base_url }}
+        foreman_api_token: ${{ inputs.foreman_api_token }}
+        job_name:          ${{ inputs.job_name }}
+        job_id:            ${{ github.job }}
+        status:            running
+        runner_name:       ${{ runner.name }}
+        runner_os:         ${{ runner.os }}
+
+    # ── 4. Compute quarantine filters from the gate plan if one was
+    # passed in. Outputs are re-exported at the action level so test
+    # steps can use `${{ steps.<wrapper-id>.outputs.ctest_regex }}`
+    # without referencing the inner sub-step id.
+    - name: Foreman exclude patterns
+      id: exclude
+      if: inputs.plan_json != ''
+      uses: Project-Tick/Project-Tick/.github/actions/foreman-exclude-patterns@master
+      with:
+        plan_json: ${{ inputs.plan_json }}

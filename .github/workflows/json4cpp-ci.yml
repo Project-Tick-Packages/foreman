@@ -42,13 +42,16 @@ jobs:
     runs-on: ubuntu-latest
     container: gcc:latest
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - name: install git
         run: apt-get install git
       - uses: Project-Tick-Infrastructure/checkout@v5
@@ -60,6 +63,16 @@ jobs:
         run: cmake -S ${{ inputs.source-repository != '' && '.' || 'json4cpp' }} -B build -DJSON_CI=On
       - name: Build
         run: cmake --build build --target ci_test_gcc
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   ci_static_analysis:
     runs-on: ubuntu-latest
@@ -68,13 +81,16 @@ jobs:
       matrix:
         target: [ci_test_amalgamation, ci_test_single_header, ci_cppcheck, ci_cpplint, ci_reproducible_tests, ci_non_git_tests, ci_offline_testdata, ci_reuse_compliance, ci_test_valgrind]
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
@@ -86,6 +102,16 @@ jobs:
         run: cmake -S ${{ inputs.source-repository != '' && '.' || 'json4cpp' }} -B build -DJSON_CI=On
       - name: Build
         run: cmake --build build --target ${{ matrix.target }}
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   ci_static_analysis_clang:
     runs-on: ubuntu-latest
@@ -95,13 +121,16 @@ jobs:
       matrix:
         target: [ci_test_clang, ci_clang_tidy, ci_test_clang_sanitizer, ci_clang_analyze, ci_single_binaries]
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - name: Install dependencies
         run: apt-get update ; apt-get install -y git clang-tools iwyu unzip
       - uses: Project-Tick-Infrastructure/checkout@v5
@@ -113,6 +142,16 @@ jobs:
         run: cmake -S ${{ inputs.source-repository != '' && '.' || 'json4cpp' }} -B build -DJSON_CI=On
       - name: Build
         run: cmake --build build --target ${{ matrix.target }}
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   ci_test_compilers_gcc:
     runs-on: ubuntu-latest
@@ -122,13 +161,16 @@ jobs:
         compiler: ['7', '8', '9', '10', '11', '12', '13', '14', '15', 'latest']
     container: gcc:${{ matrix.compiler }}
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
@@ -138,6 +180,16 @@ jobs:
         run: cmake -S ${{ inputs.source-repository != '' && '.' || 'json4cpp' }} -B build -DJSON_CI=On
       - name: Build
         run: cmake --build build --target ci_test_compiler_default
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   ci_test_compilers_clang:
     runs-on: ubuntu-latest
@@ -147,13 +199,16 @@ jobs:
         compiler: ['11', '12', '13', '14', '15-bullseye', '16', '17', '18', '19', '20', 'latest']
     container: silkeh/clang:${{ matrix.compiler }}
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - name: Install dependencies
         run: apt-get update ; apt-get install -y git clang-tools iwyu unzip
       - uses: Project-Tick-Infrastructure/checkout@v5
@@ -165,17 +220,30 @@ jobs:
         run: cmake -S ${{ inputs.source-repository != '' && '.' || 'json4cpp' }} -B build -DJSON_CI=On
       - name: Build
         run: cmake --build build --target ci_test_compiler_default
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   ci_test_coverage:
     runs-on: ubuntu-latest
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
@@ -194,6 +262,16 @@ jobs:
         with:
           name: code-coverage-report
           path: build/html
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   macos:
     runs-on: ${{ matrix.os }}
@@ -202,13 +280,16 @@ jobs:
       matrix:
         os: [macos-14, macos-15]
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
@@ -216,6 +297,16 @@ jobs:
         run: cmake -S ${{ inputs.source-repository != '' && '.' || 'json4cpp' }} -B build -DJSON_CI=On
       - name: Build
         run: cmake --build build --target ci_test_clang
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
 
   windows:
     runs-on: ${{ matrix.os }}
@@ -224,13 +315,16 @@ jobs:
       matrix:
         os: [windows-2022, windows-2025]
     steps:
-      - name: Start log collector
-        if: inputs.foreman-pipeline-id != ''
-        uses: Project-Tick/Project-Tick/.github/actions/log-collector@master
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
         with:
-          pipeline_id: ${{ inputs.foreman-pipeline-id }}
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
           foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
-          job_name: ${{ github.job }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
@@ -238,3 +332,13 @@ jobs:
         run: cmake -S ${{ inputs.source-repository != '' && '.' || 'json4cpp' }} -B build -DJSON_CI=On -G "Visual Studio 17 2022"
       - name: Build
         run: cmake --build build --config Release --target ci_test_msvc
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}

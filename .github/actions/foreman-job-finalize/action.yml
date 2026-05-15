@@ -1,0 +1,111 @@
+# Copyright (C) Project Tick
+# SPDX-License-Identifier: Apache-2.0
+#
+# Composite "finalize" action — drop this as the LAST step of every
+# job (under `if: always()`) that uses `foreman-job-wrapper` at the
+# top. It bundles:
+#
+#   1. foreman-junit-upload (optional, only when `junit_path` is
+#      non-empty) — parses any JUnit XML produced by the job and
+#      POSTs cases to Foreman's `/callback/test_results`.
+#   2. foreman-job-callback with terminal status — reports
+#      `success` / `failure` / `cancelled` with `runner_os`,
+#      `runner_name`, and a `conclusion` so the dashboard shows
+#      the final outcome of this matrix cell.
+#
+# Pair with `foreman-job-wrapper`. Both actions degrade to a no-op
+# when callback credentials are missing.
+
+name: Foreman Job Finalize
+description: >
+  Final-step companion to `foreman-job-wrapper`. Uploads JUnit
+  results (when present) and emits the terminal job-callback so
+  Foreman can mark the matrix cell as success / failure / cancelled.
+
+inputs:
+  # ── Callback wiring ─────────────────────────────────────────────
+  callback_url:
+    description: Foreman callback base URL for this pipeline.
+    required: false
+    default: ""
+  callback_token:
+    description: Foreman callback bearer token for this pipeline.
+    required: false
+    default: ""
+  pipeline_id:
+    description: Foreman pipeline ID. Required when callback_url is empty.
+    required: false
+    default: ""
+  foreman_base_url:
+    description: Public Foreman base URL.
+    required: false
+    default: https://builds.projecttick.net
+  foreman_api_token:
+    description: Foreman admin API token (admin-auth fallback).
+    required: false
+    default: ""
+
+  # ── Final status ────────────────────────────────────────────────
+  job_name:
+    description: Display name of the current job.
+    required: true
+  job_status:
+    description: >
+      Final job status. Typically `${{ job.status }}` which evaluates
+      to `success`, `failure`, or `cancelled` at job end. Mapped to
+      Foreman's vocabulary: success → success, failure → failure,
+      cancelled → cancelled, anything else → failure.
+    required: true
+
+  # ── Optional JUnit upload ───────────────────────────────────────
+  junit_path:
+    description: >
+      Glob (or path) of JUnit XML reports to upload. Leave empty to
+      disable the JUnit upload sub-step. Example: `**/junit*.xml`,
+      `build/junit-cmark.xml`. Missing files are tolerated silently.
+    required: false
+    default: ""
+  junit_max_cases:
+    description: Safety cap on the number of cases per upload call.
+    required: false
+    default: "5000"
+
+runs:
+  using: composite
+  steps:
+    # ── 1. JUnit ingestion. Best-effort; failing here must not change
+    # the job's final outcome (we already finished the build/test).
+    - name: Foreman JUnit upload
+      if: inputs.junit_path != '' && (inputs.pipeline_id != '' || inputs.callback_url != '')
+      continue-on-error: true
+      uses: Project-Tick/Project-Tick/.github/actions/foreman-junit-upload@master
+      with:
+        callback_url:      ${{ inputs.callback_url }}
+        callback_token:    ${{ inputs.callback_token }}
+        pipeline_id:       ${{ inputs.pipeline_id }}
+        foreman_base_url:  ${{ inputs.foreman_base_url }}
+        foreman_api_token: ${{ inputs.foreman_api_token }}
+        job_name:          ${{ inputs.job_name }}
+        junit_path:        ${{ inputs.junit_path }}
+        max_cases:         ${{ inputs.junit_max_cases }}
+
+    # ── 2. Final job-status callback. Translates the GitHub Actions
+    # vocabulary to Foreman's, capturing runner metadata so the
+    # dashboard can render runner-class breakdowns.
+    - name: Foreman job-final callback
+      if: inputs.pipeline_id != '' || inputs.callback_url != ''
+      uses: Project-Tick/Project-Tick/.github/actions/foreman-job-callback@master
+      with:
+        callback_url:      ${{ inputs.callback_url }}
+        callback_token:    ${{ inputs.callback_token }}
+        pipeline_id:       ${{ inputs.pipeline_id }}
+        foreman_base_url:  ${{ inputs.foreman_base_url }}
+        foreman_api_token: ${{ inputs.foreman_api_token }}
+        job_name:          ${{ inputs.job_name }}
+        job_id:            ${{ github.job }}
+        # `job.status` is one of success / failure / cancelled.
+        # Foreman's foreman-job-callback maps these directly.
+        status:            ${{ inputs.job_status }}
+        conclusion:        ${{ inputs.job_status }}
+        runner_name:       ${{ runner.name }}
+        runner_os:         ${{ runner.os }}
