@@ -59,7 +59,7 @@ inputs:
 
   # ── Display ─────────────────────────────────────────────────────
   job_name:
-    description: Display name of the current job. Usually `${{ github.job }}`.
+    description: "Display name of the current job. Callers typically pass github.job here."
     required: true
 
   # ── Behaviour toggles ───────────────────────────────────────────

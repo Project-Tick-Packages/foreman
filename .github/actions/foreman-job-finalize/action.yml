@@ -51,10 +51,10 @@ inputs:
     required: true
   job_status:
     description: >
-      Final job status. Typically `${{ job.status }}` which evaluates
-      to `success`, `failure`, or `cancelled` at job end. Mapped to
-      Foreman's vocabulary: success → success, failure → failure,
-      cancelled → cancelled, anything else → failure.
+      Final job status. Callers typically pass job.status here, which
+      evaluates to success, failure, or cancelled at job end. Mapped
+      to Foreman vocabulary: success -> success, failure -> failure,
+      cancelled -> cancelled, anything else -> failure.
     required: true
 
   # ── Optional JUnit upload ───────────────────────────────────────
