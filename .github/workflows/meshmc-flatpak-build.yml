@@ -12,17 +12,6 @@ on:
         description: Foreman pipeline ID for log streaming.
         type: string
         default: ""
-    outputs:
-      repository-cache-key:
-        description: Cache key used to save the contents of the repository
-        value: ${{ jobs.build.outputs.repository-cache-key }}
-      repository-directory:
-        description: Directory name of the cached repository
-        value: ${{ jobs.build.outputs.repository-directory }}
-    secrets:
-      FLATPAK_GPG_PRIVATE_KEY:
-        description: GPG key used for signing the ostree repository
-        required: false
       source-repository:
         description: Source repository URL (GitLab).
         type: string
@@ -43,6 +32,17 @@ on:
         description: Foreman callback bearer token for this pipeline.
         type: string
         default: ""
+    outputs:
+      repository-cache-key:
+        description: Cache key used to save the contents of the repository
+        value: ${{ jobs.build.outputs.repository-cache-key }}
+      repository-directory:
+        description: Directory name of the cached repository
+        value: ${{ jobs.build.outputs.repository-directory }}
+    secrets:
+      FLATPAK_GPG_PRIVATE_KEY:
+        description: GPG key used for signing the ostree repository
+        required: false
   workflow_dispatch:
     inputs:
       cache-repository:
