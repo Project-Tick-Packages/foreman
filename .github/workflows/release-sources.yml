@@ -211,21 +211,6 @@ jobs:
         with:
           project: meshmc
           source-repository: ${{ inputs.source-repository || '' }}
-          bundle-libraries: |
-            gitlab:project-tick/projects/classparser:libraries/classparser
-            gitlab:project-tick/projects/cmark:libraries/cmark
-            gitlab:project-tick/projects/ganalytics:libraries/ganalytics
-            gitlab:project-tick/projects/iconfix:libraries/iconfix
-            gitlab:project-tick/projects/javacheck:libraries/javacheck
-            gitlab:project-tick/projects/javalauncher:libraries/launcher
-            gitlab:project-tick/projects/katabasis:libraries/katabasis
-            gitlab:project-tick/projects/libnbtplusplus:libraries/libnbtplusplus
-            gitlab:project-tick/projects/LocalPeer:libraries/LocalPeer
-            gitlab:project-tick/projects/neozip:libraries/neozip
-            gitlab:project-tick/projects/optional-bare:libraries/optional-bare
-            gitlab:project-tick/projects/rainbow:libraries/rainbow
-            gitlab:project-tick/projects/systeminfo:libraries/systeminfo
-            gitlab:project-tick/projects/xz-embedded:libraries/xz-embedded
           gitlab-source-token: ${{ secrets.PT_GITLAB_SOURCE_TOKEN }}
           gitlab-source-username: ${{ vars.PT_GITLAB_SOURCE_USERNAME }}
 
