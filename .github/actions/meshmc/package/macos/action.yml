@@ -87,112 +87,28 @@ runs:
               done
         fi
 
-        # ─────────────────────────────────────────────────────────────
-        # Sign each .mmco loadable bundle.
+        # .mmco loadable bundles are NOT codesigned here.
         #
-        # This is the part that took us four CI rounds to get right.
-        # The fundamental tension:
+        # They live under Contents/Resources/mmcmodules and carry
+        # our own RSA trailer (scripts/mmco_sign.py) appended past
+        # the Mach-O __LINKEDIT region. Apple's codesign --strict
+        # rejects Mach-Os whose total file size doesn't match what
+        # the load commands describe, so a trailer-bearing .mmco
+        # cannot also carry a valid Apple LC_CODE_SIGNATURE — we
+        # tried that and got
+        #   "main executable failed strict validation
+        #    In subcomponent: .../mmcmodules/Foo.mmco"
+        # at verify time even though the per-plugin codesign call
+        # itself succeeded.
         #
-        #   * Every .mmco is a Mach-O loadable bundle with a custom
-        #     RSA trailer appended after the image (see
-        #     scripts/mmco_sign.py). The trailer carries our own
-        #     plugin-trust signature; the launcher refuses to load
-        #     a .mmco whose trailer is missing or doesn't verify.
-        #
-        #   * Apple's codesign --strict (which notarization enforces
-        #     implicitly when it walks the bundle) demands that
-        #     every Mach-O under Contents/PlugIns/ carry an Apple
-        #     signature in its LC_CODE_SIGNATURE / __LINKEDIT
-        #     region. If it doesn't, sealing the parent fails with
-        #         "code object is not signed at all
-        #          In subcomponent: .../mmcmodules/Foo.mmco"
-        #     — the exact failure we kept hitting.
-        #
-        # The two signatures land in different physical regions of
-        # the file:
-        #
-        #   * Apple's signature lives inside __LINKEDIT, and the
-        #     Mach-O load commands describe the image as ending at
-        #     __LINKEDIT.fileoff + __LINKEDIT.filesize. codesign
-        #     verifies bytes up to that boundary.
-        #
-        #   * Our MMCS trailer is appended *after* that boundary —
-        #     it's trailing data from the linker's point of view,
-        #     ignored by codesign's hash computation but covered by
-        #     the parent bundle's CodeResources seal (so it is
-        #     tamper-detected via the outer signature instead).
-        #
-        # So the recipe is: strip our trailer, let codesign add the
-        # Apple signature, then re-append our trailer byte-for-byte.
-        # No GPG keys touched here — we preserve the trailer the
-        # CMake install step already produced.
-        if [ -d "MeshMC.app/Contents/PlugIns/mmcmodules" ]; then
-          echo "Apple-signing .mmco loadable bundles (trailer-preserving)"
-          find "MeshMC.app/Contents/PlugIns/mmcmodules" \
-               -type f -name "*.mmco" -print0 \
-            | while IFS= read -r -d '' _mmco; do
-                echo "  -> $_mmco"
-
-                # Detach the MMCS trailer (if any) into a sidecar
-                # file so we can splice it back on after codesign
-                # has had its way with the Mach-O. The helper is
-                # inlined as a Python one-liner to avoid pulling in
-                # another script-finding step on the macOS runner.
-                _trailer="$(mktemp)"
-                sudo python3 - "$_mmco" "$_trailer" <<'PYEOF'
-        import struct, sys, pathlib
-        # MMCS = ASCII "MMCS" in little-endian; matches
-        # MMCO_TRAILER_MAGIC in scripts/mmco_sign.py.
-        MAGIC = 0x53434D4D
-        FOOTER_FMT = "<QI"
-        FOOTER_SIZE = struct.calcsize(FOOTER_FMT)
-        mod = pathlib.Path(sys.argv[1])
-        out = pathlib.Path(sys.argv[2])
-        data = mod.read_bytes()
-        if len(data) < FOOTER_SIZE:
-            out.write_bytes(b"")
-            sys.exit(0)
-        sig_size, magic = struct.unpack(FOOTER_FMT, data[-FOOTER_SIZE:])
-        if magic != MAGIC:
-            # No MMCS trailer present (e.g. MESHMC_SKIP_INSTALL_RESIGN=1
-            # was set, or a manual rebuild dropped one). Nothing to
-            # preserve; codesign will operate on the raw Mach-O.
-            out.write_bytes(b"")
-            sys.exit(0)
-        trailer_start = len(data) - FOOTER_SIZE - sig_size
-        if trailer_start < 0:
-            # Malformed trailer; bail rather than corrupt the file.
-            sys.stderr.write(
-                f"mmco_sign trailer in {mod} is malformed "
-                f"(sig_size={sig_size}, file_size={len(data)})\n")
-            sys.exit(2)
-        # Save the trailer bytes verbatim and truncate the module
-        # back to the raw Mach-O image codesign expects.
-        out.write_bytes(data[trailer_start:])
-        mod.write_bytes(data[:trailer_start])
-        PYEOF
-
-                # Apple-sign the raw Mach-O. No entitlements here:
-                # plugins inherit the launcher's sandbox, and giving
-                # them their own entitlement blob would trip
-                # notarization with a different error.
-                sudo codesign --sign "$APPLE_CODESIGN_ID" --force \
-                              --options runtime $TIMESTAMP_FLAG \
-                              "$_mmco"
-
-                # Re-attach the MMCS trailer byte-for-byte. Apple's
-                # __LINKEDIT.filesize defines where its signed
-                # region ends, so appending data past that point
-                # leaves the Apple signature valid. The outer bundle
-                # seal will hash the full file (trailer included)
-                # via CodeResources, so tamper-detection on the
-                # trailer is delegated to the parent signature.
-                if [ -s "$_trailer" ]; then
-                  sudo bash -c "cat \"$_trailer\" >> \"$_mmco\""
-                fi
-                rm -f "$_trailer"
-              done
-        fi
+        # Resources/ is the one bundle subdirectory codesign treats
+        # as opaque data: every file is hashed verbatim into
+        # _CodeSignature/CodeResources but its bytes are never
+        # parsed as code. Trailer integrity is therefore enforced
+        # by the parent bundle's seal, and Apple gatekeeping is
+        # satisfied without us trying to dual-sign the same file.
+        # The plugin loader (PluginLoader.cpp) probes
+        # Contents/Resources/mmcmodules first on macOS.
 
         # Bundle-layout guard.
         #
@@ -233,68 +149,42 @@ runs:
           fi
         done < <(find "MeshMC.app/Contents/MacOS" -mindepth 1 -print0)
 
-        # Contents/PlugIns/ layout check.
-        #
-        # Apple's strict-signing pass also walks PlugIns/ and treats
-        # every file it finds there as nested code that must be
-        # individually signable. JSON / TXT / template files dropped
-        # alongside a .mmco produce the exact same
-        #   "code object is not signed at all
-        #    In subcomponent: .../PlugIns/mmcmodules/Foo/rules/x.json"
-        # failure mode we saw with Contents/MacOS/jars. Plugin data
-        # belongs under Contents/Resources/MMCOPluginData/<Plugin>/
-        # (see MMCO_PLUGIN_DATA_DEST_DIR in the top-level CMakeLists).
-        # Only Mach-O files (.mmco) and well-formed Apple bundles
-        # (*.bundle / *.framework) are allowed under PlugIns/.
-        if [ -d "MeshMC.app/Contents/PlugIns" ]; then
-          echo "Validating Contents/PlugIns/ layout"
-          while IFS= read -r -d '' _entry; do
-            # We don't descend into well-formed Apple bundles —
-            # those are signed as a unit and their internals are
-            # codesign's problem, not ours.
-            case "$_entry" in
-              *.framework|*.bundle|*.app)
-                continue
-                ;;
-            esac
-            # Inside *.framework / *.bundle / *.app the find walk
-            # would still report their contents; skip anything
-            # whose path contains one of those segments.
-            if echo "$_entry" \
-                 | grep -qE '\.(framework|bundle|app)(/|$)'; then
-              continue
-            fi
-            if [ -d "$_entry" ]; then
-              # Subdirectory under PlugIns/ that isn't itself a
-              # bundle. The mmcmodules/ container is the only one
-              # we expect (it groups .mmco loadable bundles).
-              case "${_entry#MeshMC.app/Contents/PlugIns/}" in
-                mmcmodules)
-                  continue
-                  ;;
-              esac
-              # Anything else (e.g. mmcmodules/ErrorOracle/) means
-              # a plugin shipped a data directory next to its .mmco.
-              # That is exactly what trips codesign.
-              echo "::error::Plugin-data directory under Contents/PlugIns/: $_entry"
-              echo "          Install plugin data files to MMCO_PLUGIN_DATA_DEST_DIR"
-              echo "          (Contents/Resources/MMCOPluginData/<PluginName>/...) instead."
-              _layout_bad=1
-              continue
-            fi
-            if [ ! -f "$_entry" ]; then
-              continue
-            fi
-            # Files at this depth must be Mach-O (.mmco files are
-            # Mach-O loadable bundles). Anything else — JSON, TXT,
-            # README — is unsigned data and will trip codesign.
-            if ! file -b "$_entry" | grep -qE 'Mach-O|universal binary'; then
-              echo "::error::Non-Mach-O file under Contents/PlugIns/: $_entry"
-              echo "          file: $(file -b "$_entry")"
-              echo "          Move it to Contents/Resources/MMCOPluginData/<Plugin>/."
-              _layout_bad=1
-            fi
-          done < <(find "MeshMC.app/Contents/PlugIns" -mindepth 1 -print0)
+        # Regression guard: .mmco loadable bundles must NOT live
+        # under Contents/PlugIns/ on macOS. They belong in
+        # Contents/Resources/mmcmodules — see MMCO_MODULES_DEST_DIR
+        # in the top-level CMakeLists.txt for the full rationale.
+        # The Qt-installed plug-ins under Contents/PlugIns/platforms,
+        # /styles, /tls, /imageformats, /iconengines etc. are clean
+        # Apple-signed dylibs and codesign happily seals them; we
+        # don't touch that subtree.
+        if [ -d "MeshMC.app/Contents/PlugIns/mmcmodules" ]; then
+          echo "::error::.mmco files found under Contents/PlugIns/mmcmodules;"
+          echo "          they must install to Contents/Resources/mmcmodules"
+          echo "          on macOS. Check MMCO_MODULES_DEST_DIR in the"
+          echo "          top-level CMakeLists.txt."
+          ls -la "MeshMC.app/Contents/PlugIns/mmcmodules" || true
+          _layout_bad=1
+        fi
+
+        # Positive check: the new canonical location must exist
+        # and contain at least one .mmco. If it's missing entirely,
+        # the install rules silently dropped the plugins somewhere
+        # we don't expect — better to fail here than ship a launcher
+        # that loads no plugins.
+        if [ ! -d "MeshMC.app/Contents/Resources/mmcmodules" ]; then
+          echo "::error::Contents/Resources/mmcmodules/ is missing."
+          echo "          MMCO_MODULES_DEST_DIR points there on macOS;"
+          echo "          something in the install pipeline broke."
+          _layout_bad=1
+        else
+          _mmco_count=$(find "MeshMC.app/Contents/Resources/mmcmodules" \
+                             -type f -name "*.mmco" | wc -l | tr -d ' ')
+          if [ "$_mmco_count" = "0" ]; then
+            echo "::error::Contents/Resources/mmcmodules/ contains no .mmco files."
+            _layout_bad=1
+          else
+            echo "Found $_mmco_count .mmco bundles under Contents/Resources/mmcmodules/"
+          fi
         fi
 
         if [ "$_layout_bad" != "0" ]; then
