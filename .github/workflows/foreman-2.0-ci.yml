@@ -36,6 +36,10 @@ defaults:
   run:
     shell: bash
 
+env:
+  REGISTRY: registry.projecttick.net
+  IMAGE_NAME: registry.projecttick.net/foreman
+
 jobs:
   rspec:
     name: RSpec + config validation
@@ -89,7 +93,6 @@ jobs:
         uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
-          object-format: sha256
           submodules: true
 
       - name: Set up Ruby
@@ -175,7 +178,6 @@ jobs:
         uses: Project-Tick-Infrastructure/checkout@v5
         with:
           source-repository: ${{ inputs.source-repository || '' }}
-          object-format: sha256
           submodules: true
 
       - name: Set up Ruby
@@ -191,6 +193,80 @@ jobs:
             ruby -c "$f" >/dev/null || fail=1
           done
           exit $fail
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          job_status:        ${{ job.status }}
+
+  build:
+    name: Build & push image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Foreman job init
+        id: foreman
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
+        with:
+          callback_url:      ${{ inputs.foreman-callback-url }}
+          callback_token:    ${{ inputs.foreman-callback-token }}
+          pipeline_id:       ${{ inputs.foreman-pipeline-id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          ${{ github.job }}
+          plan_json:         ${{ inputs.foreman-plan }}
+
+      - name: Checkout
+        uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.source-repository || '' }}
+          submodules: true
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::12}"
+          version="$(cat VERSION 2>/dev/null | tr -d '[:space:]')"
+          {
+            echo "sha_tag=sha-${short_sha}"
+            echo "version_tag=${version:-0.0.0}"
+            echo "latest_enable=${{ github.ref == 'refs/heads/master' }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build & push (multi-arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.version_tag }}
+            ${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.sha_tag }}
+            ${{ steps.tags.outputs.latest_enable == 'true' && format('{0}:latest', env.IMAGE_NAME) || '' }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+
       - name: Foreman job finalize
         if: always()
         uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
