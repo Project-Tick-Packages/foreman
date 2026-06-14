@@ -129,13 +129,26 @@ runs:
 
         copied=0
 
-        # Kaynak arşivleri
+        # Kaynak arşivleri. Üç olası yerleşim desteklenir:
+        #   1. <dir>/<product>-source-archives/   (download-artifact, name'li alt dizin)
+        #   2. <dir>/source-<product>/            (eski isimlendirme)
+        #   3. <dir>/ içinde DOĞRUDAN tarball'lar  (download-artifact `path:` ile
+        #      tek artifact indirildiğinde alt dizin oluşturmaz)
         if [[ -d "${SRC_ROOT}/${PRODUCT}-source-archives" ]]; then
           cp -a "${SRC_ROOT}/${PRODUCT}-source-archives/." "deploy-bundle/${PRODUCT}/"
           copied=1
         elif [[ -d "${SRC_ROOT}/source-${PRODUCT}" ]]; then
           cp -a "${SRC_ROOT}/source-${PRODUCT}/." "deploy-bundle/${PRODUCT}/"
           copied=1
+        else
+          # Düz dizin: source arşivlerini ve imza/sağlama dosyalarını kopyala.
+          while IFS= read -r -d '' f; do
+            cp "$f" "deploy-bundle/${PRODUCT}/"
+            copied=1
+          done < <(find "${SRC_ROOT}" -maxdepth 1 -type f \
+                     \( -name '*.tar.gz' -o -name '*.tar.xz' -o -name '*.tar.zst' \
+                        -o -name '*.zip' -o -name '*.7z' \
+                        -o -name '*.asc' -o -name '*.sha256' -o -name '*.sig' \) -print0)
         fi
 
         # MeshMC binary'leri
@@ -159,7 +172,7 @@ runs:
         if [[ "$copied" -eq 0 ]]; then
           echo "::error::No artifacts staged for ${PRODUCT} ${VERSION}." \
                "Searched in ${SRC_ROOT} for '${PRODUCT}-source-archives/'," \
-               "'source-${PRODUCT}/'" \
+               "'source-${PRODUCT}/', or source tarballs directly in the dir" \
                "$( [[ "$PRODUCT" == "meshmc" && "$BETA_SOURCE_ONLY" != "true" ]] && echo ", 'MeshMC-*'" )" \
                "$( [[ "$PRODUCT" == "neozip" ]] && echo ", 'neozip-win-*'" )."
           exit 1
