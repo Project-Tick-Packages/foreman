@@ -104,7 +104,7 @@ jobs:
       - name: Checkout CNG
         uses: Project-Tick-Infrastructure/checkout@v5
         with:
-          repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'Project-Tick/cng' }}
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
           ref: ${{ inputs.cng-ref || 'master' }}
           submodules: true
 
