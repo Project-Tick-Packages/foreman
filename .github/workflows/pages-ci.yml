@@ -1,0 +1,649 @@
+name: "Uppfinna Forge: Pages CI"
+
+# Faithful port of uppfinna-pages/.gitlab/ci/{prepare,test}.yml onto the
+# Foreman-orchestrated GitHub Actions pattern. Dispatched by Foreman on
+# push / MR.
+#
+# Orchestration kept identical to uppfinna-ci.yml (callback-start →
+# per-job foreman callbacks → verdict). Job bodies are a 1:1 port of the
+# component's real CI jobs:
+#   - image: golang:${GO_VERSION} for the Go jobs (matrix 1.25, 1.26),
+#     golangci/golangci-lint:v2.12.2 for code_quality (exactly upstream),
+#   - deps are downloaded first (`make deps-download`), mirroring the
+#     `download deps` prepare job every test job `needs`,
+#   - tests: `make unit-test`; acceptance: `make acceptance`;
+#     race: `make race`; cover: `make cover`,
+#   - code_quality: `golangci-lint run …` with the upstream flags,
+#   - checks: `make deps-check` + `make mocks-check` +
+#     `make validate-log-fields`.
+
+# `workflow_dispatch.inputs` MUST be a superset of every key Foreman's
+# dispatcher sends, or GitHub rejects the whole dispatch with 422 and the
+# Foreman pipeline is stuck `pending`. Same generic contract as ci.yml.
+on:
+  workflow_call:
+    inputs:
+      force-all: { type: string, default: "" }
+      build-type: { type: string, default: "" }
+      source-repository: { type: string, default: "" }
+      source-ref: { type: string, default: "" }
+      event-name: { type: string, default: "" }
+      event-actor: { type: string, default: "" }
+      source-sha: { type: string, default: "" }
+      before-sha: { type: string, default: "" }
+      head-ref: { type: string, default: "" }
+      base-ref: { type: string, default: "" }
+      pr-number: { type: string, default: "" }
+      pr-base-sha: { type: string, default: "" }
+      pr-head-sha: { type: string, default: "" }
+      pr-title: { type: string, default: "" }
+      pr-draft: { type: string, default: "" }
+      callback_url: { type: string, default: "" }
+      callback_token: { type: string, default: "" }
+      foreman-plan: { type: string, default: "" }
+      foreman-pipeline-id: { type: string, default: "" }
+      foreman-callback-url: { type: string, default: "" }
+      foreman-callback-token: { type: string, default: "" }
+  workflow_dispatch:
+    inputs:
+      force-all: { type: string, default: "" }
+      build-type: { type: string, default: "" }
+      source-repository: { type: string, default: "" }
+      source-ref: { type: string, default: "" }
+      event-name: { type: string, default: "" }
+      event-actor: { type: string, default: "" }
+      source-sha: { type: string, default: "" }
+      before-sha: { type: string, default: "" }
+      head-ref: { type: string, default: "" }
+      base-ref: { type: string, default: "" }
+      pr-number: { type: string, default: "" }
+      pr-base-sha: { type: string, default: "" }
+      pr-head-sha: { type: string, default: "" }
+      pr-title: { type: string, default: "" }
+      pr-draft: { type: string, default: "" }
+      callback_url: { type: string, default: "" }
+      callback_token: { type: string, default: "" }
+      foreman-plan: { type: string, default: "" }
+      foreman-pipeline-id: { type: string, default: "" }
+      foreman-callback-url: { type: string, default: "" }
+      foreman-callback-token: { type: string, default: "" }
+
+permissions: {}
+
+jobs:
+  callback-start:
+    name: "Callback Start"
+    runs-on: ubuntu-latest
+    outputs:
+      callback_url: ${{ steps.prepare.outputs.callback_url }}
+      cb_auth: ${{ steps.prepare.outputs.cb_auth }}
+      pipeline_id: ${{ steps.prepare.outputs.pipeline_id }}
+    permissions: {}
+    steps:
+      - name: Prepare callback destination
+        id: prepare
+        shell: bash
+        env:
+          # Foreman dispatches snake_case callback_url / callback_token today
+          # (kebab foreman-* only when FF foreman_plan_dispatch_inject is on).
+          # Prefer snake, fall back to kebab.
+          INPUT_PIPELINE_ID: ${{ inputs.foreman-pipeline-id || '' }}
+          INPUT_CALLBACK_URL: ${{ inputs.callback_url || inputs.foreman-callback-url || '' }}
+          INPUT_CALLBACK_TOKEN: ${{ inputs.callback_token || inputs.foreman-callback-token || '' }}
+          FOREMAN_BASE_URL: ${{ vars.FOREMAN_BASE_URL || 'https://builds.projecttick.net' }}
+          FOREMAN_API_TOKEN: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository || '' }}
+          REF: ${{ inputs.source-ref || github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          callback_url=""
+          callback_token=""
+          pipeline_id=""
+
+          if [[ -n "$INPUT_CALLBACK_URL" && -n "$INPUT_CALLBACK_TOKEN" ]]; then
+            callback_url="$INPUT_CALLBACK_URL"
+            callback_token="$INPUT_CALLBACK_TOKEN"
+            pipeline_id="$INPUT_PIPELINE_ID"
+          elif [[ -n "$FOREMAN_API_TOKEN" ]]; then
+            if [[ -n "$SOURCE_REPOSITORY" ]]; then
+              app_id="$(basename "$SOURCE_REPOSITORY" .git)"
+              repo="$SOURCE_REPOSITORY"
+            else
+              app_id="${REPOSITORY#*/}"
+              repo="$REPOSITORY"
+            fi
+
+            payload="$(jq -nc \
+              --arg app_id "$app_id" \
+              --arg repo "$repo" \
+              --arg ref "$REF" \
+              --arg sha "$SHA" \
+              '{
+                app_id: $app_id,
+                params: {
+                  repo: $repo,
+                  ref: $ref,
+                  sha: $sha,
+                  native_github_ci: "true",
+                  pipeline_kind: "uppfinna-pages"
+                }
+              }')"
+
+            if register_response="$(curl \
+              --silent --show-error --fail \
+              --retry 3 --retry-all-errors \
+              --request POST \
+              --header "Authorization: Bearer $FOREMAN_API_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data "$payload" \
+              "${FOREMAN_BASE_URL%/}/api/pipelines/external")"; then
+              callback_url="$(printf '%s' "$register_response" | jq -r '.callback_url // ""')"
+              callback_token="$(printf '%s' "$register_response" | jq -r '.callback_token // ""')"
+              pipeline_id="$(printf '%s' "$register_response" | jq -r '.pipeline_id // ""')"
+            else
+              echo "::warning::Failed to register this Pages run in Foreman."
+            fi
+          else
+            echo "No Foreman callback destination configured."
+          fi
+
+          if [[ -z "$pipeline_id" && -n "$callback_url" ]]; then
+            pipeline_id="$(printf '%s' "$callback_url" | sed -nE 's#^.*/api/pipelines/([0-9a-fA-F-]+)/callback/?$#\1#p')"
+          fi
+
+          {
+            echo "callback_url=$callback_url"
+            echo "cb_auth=$callback_token"
+            echo "pipeline_id=$pipeline_id"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report workflow run URL
+        if: steps.prepare.outputs.callback_url != '' && steps.prepare.outputs.cb_auth != ''
+        shell: bash
+        env:
+          CALLBACK_URL: ${{ steps.prepare.outputs.callback_url }}
+          CALLBACK_TOKEN: ${{ steps.prepare.outputs.cb_auth }}
+          RUN_URL: ${{ format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
+        run: |
+          set -euo pipefail
+          payload="$(printf '{"log_url":"%s"}' "$RUN_URL")"
+          curl \
+            --silent --show-error \
+            --retry 3 --retry-all-errors --max-time 15 \
+            --request POST \
+            --header "Authorization: Bearer $CALLBACK_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "${CALLBACK_URL%/}/log_url" \
+            || echo "::warning::log_url callback failed (non-fatal)"
+
+  tests:
+    name: "tests (go ${{ matrix.go_version }})"
+    needs: callback-start
+    runs-on: ubuntu-24.04
+    container:
+      image: golang:${{ matrix.go_version }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Mirrors .tests-matrix parallel GO_VERSION.
+        go_version: ["1.25", "1.26"]
+    env:
+      GITLAB_DIR: ${{ inputs.source-repository != '' && '.' || 'uppfinna-pages' }}
+      GOPATH: ${{ github.workspace }}/.GOPATH
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.GITLAB_DIR }}
+    steps:
+      - name: Install jq (container images lack it)
+        shell: bash
+        run: command -v jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y --no-install-recommends jq; }
+
+      - name: Foreman job init
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          tests
+          plan_json:         ${{ inputs.foreman-plan }}
+
+      - name: Checkout
+        uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          ref: ${{ inputs.source-ref || '' }}
+          source-repository: ${{ inputs.source-repository || '' }}
+          submodules: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.GITLAB_DIR }}/.GOPATH/pkg/mod
+            ~/.cache/go-build
+          key: pages-go-${{ matrix.go_version }}-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', env.GITLAB_DIR)) }}
+          restore-keys: |
+            pages-go-${{ matrix.go_version }}-${{ runner.os }}-
+
+      # `download deps` prepare job (every test job needs it).
+      - name: Download deps
+        run: make deps-download
+
+      - name: Run unit tests
+        run: make unit-test
+
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          tests
+          job_status:        ${{ job.status }}
+
+  acceptance:
+    name: "acceptance (go ${{ matrix.go_version }})"
+    needs: callback-start
+    runs-on: ubuntu-24.04
+    container:
+      image: golang:${{ matrix.go_version }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        go_version: ["1.25", "1.26"]
+    env:
+      GITLAB_DIR: ${{ inputs.source-repository != '' && '.' || 'uppfinna-pages' }}
+      GOPATH: ${{ github.workspace }}/.GOPATH
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.GITLAB_DIR }}
+    steps:
+      - name: Install jq (container images lack it)
+        shell: bash
+        run: command -v jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y --no-install-recommends jq; }
+
+      - name: Foreman job init
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          acceptance
+          plan_json:         ${{ inputs.foreman-plan }}
+
+      - name: Checkout
+        uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          ref: ${{ inputs.source-ref || '' }}
+          source-repository: ${{ inputs.source-repository || '' }}
+          submodules: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.GITLAB_DIR }}/.GOPATH/pkg/mod
+            ~/.cache/go-build
+          key: pages-go-${{ matrix.go_version }}-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', env.GITLAB_DIR)) }}
+          restore-keys: |
+            pages-go-${{ matrix.go_version }}-${{ runner.os }}-
+
+      - name: Download deps
+        run: make deps-download
+
+      - name: Run acceptance tests
+        run: make acceptance
+
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          acceptance
+          job_status:        ${{ job.status }}
+
+  race:
+    name: Test (race)
+    needs: callback-start
+    runs-on: ubuntu-24.04
+    container:
+      image: golang:1.25
+    permissions:
+      contents: read
+    env:
+      GITLAB_DIR: ${{ inputs.source-repository != '' && '.' || 'uppfinna-pages' }}
+      GOPATH: ${{ github.workspace }}/.GOPATH
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.GITLAB_DIR }}
+    steps:
+      - name: Install jq (container images lack it)
+        shell: bash
+        run: command -v jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y --no-install-recommends jq; }
+
+      - name: Foreman job init
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          race
+          plan_json:         ${{ inputs.foreman-plan }}
+
+      - name: Checkout
+        uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          ref: ${{ inputs.source-ref || '' }}
+          source-repository: ${{ inputs.source-repository || '' }}
+          submodules: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.GITLAB_DIR }}/.GOPATH/pkg/mod
+            ~/.cache/go-build
+          key: pages-go-1.25-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', env.GITLAB_DIR)) }}
+          restore-keys: |
+            pages-go-1.25-${{ runner.os }}-
+
+      - name: Download deps
+        run: make deps-download
+
+      - name: Run tests with race detector
+        run: make race
+
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          race
+          job_status:        ${{ job.status }}
+
+  cover:
+    name: Coverage
+    needs: callback-start
+    runs-on: ubuntu-24.04
+    container:
+      image: golang:1.25
+    permissions:
+      contents: read
+    env:
+      GITLAB_DIR: ${{ inputs.source-repository != '' && '.' || 'uppfinna-pages' }}
+      GOPATH: ${{ github.workspace }}/.GOPATH
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.GITLAB_DIR }}
+    steps:
+      - name: Install jq (container images lack it)
+        shell: bash
+        run: command -v jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y --no-install-recommends jq; }
+
+      - name: Foreman job init
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          cover
+          plan_json:         ${{ inputs.foreman-plan }}
+
+      - name: Checkout
+        uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          ref: ${{ inputs.source-ref || '' }}
+          source-repository: ${{ inputs.source-repository || '' }}
+          submodules: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.GITLAB_DIR }}/.GOPATH/pkg/mod
+            ~/.cache/go-build
+          key: pages-go-1.25-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', env.GITLAB_DIR)) }}
+          restore-keys: |
+            pages-go-1.25-${{ runner.os }}-
+
+      - name: Download deps
+        run: make deps-download
+
+      - name: Run coverage
+        run: make cover
+
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          cover
+          job_status:        ${{ job.status }}
+
+  code_quality:
+    name: Code Quality (golangci-lint)
+    needs: callback-start
+    runs-on: ubuntu-24.04
+    container:
+      # Faithful port: upstream code_quality pins this exact image.
+      image: golangci/golangci-lint:v2.12.2
+    permissions:
+      contents: read
+    env:
+      GITLAB_DIR: ${{ inputs.source-repository != '' && '.' || 'uppfinna-pages' }}
+      REPORT_FILE: gl-code-quality-report.json
+      LINT_FLAGS: "--color never --timeout=15m"
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.GITLAB_DIR }}
+    steps:
+      - name: Install jq (container images lack it)
+        shell: bash
+        run: command -v jq >/dev/null 2>&1 || { apk add --no-cache jq >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y --no-install-recommends jq); }
+
+      - name: Foreman job init
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          code_quality
+          plan_json:         ${{ inputs.foreman-plan }}
+
+      - name: Checkout
+        uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          ref: ${{ inputs.source-ref || '' }}
+          source-repository: ${{ inputs.source-repository || '' }}
+          submodules: true
+
+      - name: Run golangci-lint
+        run: golangci-lint run ./... --output.text.path=stdout --output.code-climate.path=${REPORT_FILE} ${LINT_FLAGS}
+
+      - name: Upload code quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-code-quality
+          path: ${{ env.GITLAB_DIR }}/gl-code-quality-report.json
+          if-no-files-found: ignore
+          retention-days: 31
+
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          code_quality
+          job_status:        ${{ job.status }}
+
+  checks:
+    name: "Checks (deps + mocks + log fields)"
+    needs: callback-start
+    runs-on: ubuntu-24.04
+    container:
+      image: golang:1.25
+    permissions:
+      contents: read
+    env:
+      GITLAB_DIR: ${{ inputs.source-repository != '' && '.' || 'uppfinna-pages' }}
+      GOPATH: ${{ github.workspace }}/.GOPATH
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.GITLAB_DIR }}
+    steps:
+      - name: Install jq (container images lack it)
+        shell: bash
+        run: command -v jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y --no-install-recommends jq; }
+
+      - name: Foreman job init
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-wrapper@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          checks
+          plan_json:         ${{ inputs.foreman-plan }}
+
+      - name: Checkout
+        uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          ref: ${{ inputs.source-ref || '' }}
+          source-repository: ${{ inputs.source-repository || '' }}
+          submodules: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.GITLAB_DIR }}/.GOPATH/pkg/mod
+            ~/.cache/go-build
+          key: pages-go-1.25-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', env.GITLAB_DIR)) }}
+          restore-keys: |
+            pages-go-1.25-${{ runner.os }}-
+
+      - name: Download deps
+        run: make deps-download
+
+      - name: Check deps
+        run: make deps-check
+
+      - name: Check mocks
+        run: make mocks-check
+
+      - name: Validate log fields
+        run: make validate-log-fields
+
+      - name: Foreman job finalize
+        if: always()
+        uses: Project-Tick/Project-Tick/.github/actions/foreman-job-finalize@master
+        with:
+          callback_url:      ${{ needs.callback-start.outputs.callback_url }}
+          callback_token:    ${{ needs.callback-start.outputs.cb_auth }}
+          pipeline_id:       ${{ needs.callback-start.outputs.pipeline_id }}
+          foreman_api_token: ${{ secrets.FOREMAN_API_TOKEN }}
+          job_name:          checks
+          job_status:        ${{ job.status }}
+
+  verdict:
+    name: "Pages Verdict"
+    if: always()
+    needs:
+      - callback-start
+      - tests
+      - acceptance
+      - race
+      - cover
+      - code_quality
+      - checks
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Resolve final status
+        id: resolve
+        if: always()
+        shell: bash
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          status="success"
+          if jq -e 'to_entries[] | select(.key != "callback-start" and .value.result == "failure")' <<< "$NEEDS_JSON" >/dev/null; then
+            status="failure"
+          elif jq -e 'to_entries[] | select(.key != "callback-start" and .value.result == "cancelled")' <<< "$NEEDS_JSON" >/dev/null; then
+            status="cancelled"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "=== Pages job results ==="
+          jq -r 'to_entries[] | select(.key != "callback-start") | "\(.value.result)\t\(.key)"' <<< "$NEEDS_JSON"
+
+      - name: Report final Pages status to Foreman
+        if: always()
+        shell: bash
+        env:
+          PIPELINE_ID: ${{ needs.callback-start.outputs.pipeline_id }}
+          FOREMAN_BASE_URL: ${{ vars.FOREMAN_BASE_URL || 'https://builds.projecttick.net' }}
+          FOREMAN_API_TOKEN: ${{ secrets.FOREMAN_API_TOKEN || '' }}
+          PIPELINE_STATUS: ${{ steps.resolve.outputs.status || 'failure' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PIPELINE_ID" || -z "$FOREMAN_API_TOKEN" ]]; then
+            echo "Callback pipeline/admin token missing; skipping status report."
+            exit 0
+          fi
+          payload="$(printf '{"status":"%s"}' "$PIPELINE_STATUS")"
+          curl \
+            --silent --show-error \
+            --retry 3 --retry-all-errors --max-time 15 \
+            --request POST \
+            --header "Authorization: Bearer $FOREMAN_API_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "${FOREMAN_BASE_URL%/}/api/pipelines/${PIPELINE_ID}/admin-callback/status" \
+            || echo "::warning::Final status callback failed (non-fatal)"
+
+      - name: Enforce verdict
+        if: always()
+        shell: bash
+        env:
+          PIPELINE_STATUS: ${{ steps.resolve.outputs.status }}
+        run: |
+          set -euo pipefail
+          if [ "$PIPELINE_STATUS" != "success" ]; then
+            echo "Pages pipeline ${PIPELINE_STATUS}."
+            exit 1
+          fi
+          echo "Pages pipeline passed."

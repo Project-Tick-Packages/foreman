@@ -1,46 +1,61 @@
 name: "Uppfinna: GitLab Fork CI"
 
+# NOTE: `workflow_dispatch.inputs` MUST be a superset of every input
+# Foreman's dispatcher sends. GitHub rejects the WHOLE dispatch with 422
+# "Unexpected inputs provided" if the request carries any key not declared
+# here — which silently leaves the Foreman pipeline stuck in `pending`
+# (the transaction that flips it to `running` rolls back). Foreman's
+# generic dispatch contract is the one the working `ci.yml` declares:
+# force-all / event-name / event-actor / source-sha / before-sha /
+# head-ref / base-ref / pr-* / callback_url / callback_token, plus the
+# foreman-* gate-plan keys. Keep this list in lockstep with that contract.
 on:
   workflow_call:
     inputs:
-      source-ref:
-        type: string
-        default: ""
-      source-repository:
-        type: string
-        default: ""
-      foreman-pipeline-id:
-        type: string
-        default: ""
-      foreman-plan:
-        type: string
-        default: ""
-      foreman-callback-url:
-        type: string
-        default: ""
-      foreman-callback-token:
-        type: string
-        default: ""
+      force-all: { type: string, default: "" }
+      build-type: { type: string, default: "" }
+      source-repository: { type: string, default: "" }
+      source-ref: { type: string, default: "" }
+      event-name: { type: string, default: "" }
+      event-actor: { type: string, default: "" }
+      source-sha: { type: string, default: "" }
+      before-sha: { type: string, default: "" }
+      head-ref: { type: string, default: "" }
+      base-ref: { type: string, default: "" }
+      pr-number: { type: string, default: "" }
+      pr-base-sha: { type: string, default: "" }
+      pr-head-sha: { type: string, default: "" }
+      pr-title: { type: string, default: "" }
+      pr-draft: { type: string, default: "" }
+      callback_url: { type: string, default: "" }
+      callback_token: { type: string, default: "" }
+      foreman-plan: { type: string, default: "" }
+      foreman-pipeline-id: { type: string, default: "" }
+      foreman-callback-url: { type: string, default: "" }
+      foreman-callback-token: { type: string, default: "" }
   workflow_dispatch:
     inputs:
-      source-ref:
-        type: string
-        default: ""
-      source-repository:
-        type: string
-        default: ""
-      foreman-pipeline-id:
-        type: string
-        default: ""
-      foreman-plan:
-        type: string
-        default: ""
-      foreman-callback-url:
-        type: string
-        default: ""
-      foreman-callback-token:
-        type: string
-        default: ""
+      force-all: { type: string, default: "" }
+      build-type: { type: string, default: "" }
+      source-repository: { type: string, default: "" }
+      source-ref: { type: string, default: "" }
+      event-name: { type: string, default: "" }
+      event-actor: { type: string, default: "" }
+      source-sha: { type: string, default: "" }
+      before-sha: { type: string, default: "" }
+      head-ref: { type: string, default: "" }
+      base-ref: { type: string, default: "" }
+      pr-number: { type: string, default: "" }
+      pr-base-sha: { type: string, default: "" }
+      pr-head-sha: { type: string, default: "" }
+      pr-title: { type: string, default: "" }
+      pr-draft: { type: string, default: "" }
+      callback_url: { type: string, default: "" }
+      callback_token: { type: string, default: "" }
+      foreman-plan: { type: string, default: "" }
+      foreman-pipeline-id: { type: string, default: "" }
+      foreman-callback-url: { type: string, default: "" }
+      foreman-callback-token: { type: string, default: "" }
 
 permissions: {}
 
@@ -63,9 +78,14 @@ jobs:
         id: prepare
         shell: bash
         env:
-          INPUT_PIPELINE_ID: ${{ inputs.foreman-pipeline-id }}
-          INPUT_CALLBACK_URL: ${{ inputs.foreman-callback-url }}
-          INPUT_CALLBACK_TOKEN: ${{ inputs.foreman-callback-token }}
+          # Foreman's dispatcher sends snake_case callback_url / callback_token
+          # (and, only when FF foreman_plan_dispatch_inject is on, the kebab
+          # foreman-* keys). Read the snake keys first — they are what arrives
+          # today — and fall back to the kebab foreman-* forms so this keeps
+          # working if/when the plan-injection flag flips on.
+          INPUT_PIPELINE_ID: ${{ inputs.foreman-pipeline-id || '' }}
+          INPUT_CALLBACK_URL: ${{ inputs.callback_url || inputs.foreman-callback-url || '' }}
+          INPUT_CALLBACK_TOKEN: ${{ inputs.callback_token || inputs.foreman-callback-token || '' }}
           FOREMAN_BASE_URL: ${{ vars.FOREMAN_BASE_URL || 'https://builds.projecttick.net' }}
           FOREMAN_API_TOKEN: ${{ secrets.FOREMAN_API_TOKEN || '' }}
           REPOSITORY: ${{ github.repository }}
