@@ -53,7 +53,7 @@ jobs:
       rediscluster:
         image: registry.gitlab.com/gitlab-org/gitlab-build-images:redis-cluster-7.0.11
       redis:
-        image: valkey/valkey:7.2
+        image: valkey/valkey:9.1@sha256:4963247afc4cd33c7d3b2d2816b9f7f8eeebab148d29056c2ca4d7cbc966f2d9
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
