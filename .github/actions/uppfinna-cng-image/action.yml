@@ -127,7 +127,11 @@ runs:
         COSIGN_VERSION: "v3.0.4"
         MAILROOM_VERSION: "1.1.0"
         GITLAB_EXPORTER_VERSION: "16.8.0"
-        GITLAB_CONTAINER_REGISTRY_VERSION: "v4.40.2-gitlab"
+        # The forge mirror (project-tick/uppfinna/forge/container-registry) is
+        # branch-based and carries no upstream tags, so pin to the default
+        # branch like the other forge components (shell/pages/kas) rather than
+        # the upstream 'v4.40.2-gitlab' tag, which does not exist in the mirror.
+        GITLAB_CONTAINER_REGISTRY_VERSION: "master"
         GITLAB_OPENBAO_VERSION: "v2.5.5-gitlab2"
         GITLAB_ZOEKT_SHA: "v1.17.1"
         GITLAB_ZOEKT_TAG: "v1.17.1"
