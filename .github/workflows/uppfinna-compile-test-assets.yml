@@ -122,6 +122,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: uppfinna-test-assets
+          # Sprockets writes the precompiled manifest to
+          # public/assets/.sprockets-manifest-<hash>.json. upload-artifact@v4
+          # excludes dot-files by default, which drops the manifest and makes
+          # RSpec's find_sources('icons.json') return an empty string in test
+          # (config.assets.compile is false under CI), failing every view render.
+          include-hidden-files: true
           path: |
             ${{ env.GITLAB_DIR }}/public/assets/
             ${{ env.GITLAB_DIR }}/config/helpers/tailwind/
