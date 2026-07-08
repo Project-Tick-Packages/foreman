@@ -375,6 +375,7 @@ runs:
                               --build-arg "PYOPENSSL_VERSION=${PYOPENSSL_VERSION}" \
                               --build-arg "PYCA_CRYPTOGRAPHY_VERSION=${PYCA_CRYPTOGRAPHY_VERSION}" \
                               --build-arg "GITLAB_VERSION=${GITLAB_VERSION}" \
+                              --build-arg "GITLAB_BASE_IMAGE=$(gitlab_base_image)" \
                               --build-arg "RAILS_IMAGE=${CI_REGISTRY_IMAGE}/gitlab-rails-ce:${rails_version}${IMAGE_TAG_EXT:-}" \
                               --build-arg "GITALY_IMAGE=${CI_REGISTRY_IMAGE}/gitaly:$(get_gitaly_version)${IMAGE_TAG_EXT:-}"
             push_tags "${GITLAB_REF_SLUG}${IMAGE_TAG_EXT:-}"
