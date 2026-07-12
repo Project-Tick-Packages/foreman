@@ -4,6 +4,12 @@ description: "Build and push a single Cloud Native GitLab (CE) image using the C
 inputs:
   image:
     required: true
+  mode:
+    description: "build (per-arch native build) or merge (combine per-arch tags into a multi-arch manifest + uppfinna twin)."
+    default: "build"
+  arch:
+    description: "Target architecture for build mode: amd64 or arm64. Ignored in merge mode."
+    default: "amd64"
   gitlab-version:
     default: "master"
   image-tag:
@@ -91,7 +97,9 @@ runs:
         CI_SERVER_PROTOCOL: "https"
         GITALY_GIT_REPO_URL: ${{ inputs.gitaly-git-repo-url }}
         DISABLE_BUILDX_CLUSTER: "true"
-        ARCH_LIST: "amd64"
+        MODE: ${{ inputs.mode }}
+        ARCH_LIST: ${{ inputs.mode == 'merge' && 'amd64,arm64' || inputs.arch }}
+        ARCH_SUFFIX: ${{ inputs.mode == 'merge' && '' || format('-{0}', inputs.arch) }}
         SKIP_IMAGE_SIGNING: "true"
         SKIP_IMAGE_VERIFICATION: "true"
         COSIGN_YES: "true"
@@ -177,6 +185,11 @@ runs:
         populate_stable_image_vars
 
         gitlab_base_image() { echo "${CI_REGISTRY_IMAGE}/gitlab-base:$(get_gitlab_base_version)${IMAGE_TAG_EXT:-}"; }
+
+        if [ "${MODE}" = "merge" ]; then
+          build_final_image() { merge_and_push; }
+          build_if_needed() { merge_and_push; }
+        fi
 
         case "$CI_JOB_NAME" in
           gitlab-go)
@@ -415,6 +428,51 @@ runs:
                               --build-arg "EXIFTOOL_IMAGE=${CI_REGISTRY_IMAGE}/gitlab-exiftool:$(get_exiftool_version)${IMAGE_TAG_EXT:-}" \
                               --build-arg "GITLAB_BASE_IMAGE=$(gitlab_base_image)"
             push_tags "${GITLAB_REF_SLUG}${IMAGE_TAG_EXT:-}"
+            ;;
+          gitaly-init-cgroups)
+            build_final_image --build-arg "GITALY_IMAGE=${CI_REGISTRY_IMAGE}/gitaly:$(get_gitaly_version)${IMAGE_TAG_EXT:-}"
+            push_tags "${GITALY_SERVER_VERSION}${IMAGE_TAG_EXT:-}"
+            ;;
+          gitlab-agentk)
+            build_final_image --build-arg "FROM_IMAGE=${CI_REGISTRY_IMAGE}/gitlab-go" \
+                              --build-arg "TAG=$(get_go_version)${IMAGE_TAG_EXT:-}" \
+                              --build-arg "GITLAB_KAS_VERSION=${GITLAB_KAS_VERSION}" \
+                              --build-arg "GITLAB_NAMESPACE=${GITLAB_NAMESPACE}" \
+                              --build-arg "CI_API_V4_URL=${CI_API_V4_URL}" \
+                              --build-arg "FETCH_ARTIFACTS_PAT=${FETCH_DEV_ARTIFACTS_PAT}" \
+                              --build-arg "CACHE_BUSTER=${GITLAB_KAS_VERSION}$(date -uI)"
+            push_tags "${GITLAB_KAS_VERSION}${IMAGE_TAG_EXT:-}"
+            ;;
+          gitlab-openbao)
+            gitlab_base_version=$(get_gitlab_base_version)
+            REPO_TOKEN="${FETCH_DEV_ARTIFACTS_PAT}" \
+            build_final_image --secret "id=repo_token,env=REPO_TOKEN" \
+                              --build-arg "FROM_IMAGE=${CI_REGISTRY_IMAGE}/gitlab-go" \
+                              --build-arg "GO_TAG=$(get_go_version)${IMAGE_TAG_EXT:-}" \
+                              --build-arg "OPENBAO_VERSION=${GITLAB_OPENBAO_VERSION}" \
+                              --build-arg "OPENBAO_NAMESPACE=${OPENBAO_NAMESPACE}" \
+                              --build-arg "CI_SERVER_FQDN=${CI_SERVER_FQDN}" \
+                              --build-arg "GITLAB_BASE_IMAGE=${CI_REGISTRY_IMAGE}/gitlab-base:${gitlab_base_version}${IMAGE_TAG_EXT:-}"
+            push_tags "${GITLAB_OPENBAO_VERSION}${IMAGE_TAG_EXT:-}"
+            ;;
+          gitlab-zoekt)
+            gitlab_base_version=$(get_gitlab_base_version)
+            build_final_image --build-arg "FROM_IMAGE=${CI_REGISTRY_IMAGE}/gitlab-go" \
+                              --build-arg "GO_TAG=$(get_go_version)${IMAGE_TAG_EXT:-}" \
+                              --build-arg "TAG=${gitlab_base_version}${IMAGE_TAG_EXT:-}" \
+                              --build-arg "GITLAB_ZOEKT_SHA=${GITLAB_ZOEKT_SHA}" \
+                              --build-arg "GITLAB_BASE_IMAGE=${CI_REGISTRY_IMAGE}/gitlab-base:${gitlab_base_version}${IMAGE_TAG_EXT:-}"
+            push_tags "${GITLAB_ZOEKT_TAG}${IMAGE_TAG_EXT:-}"
+            ;;
+          gitlab-elasticsearch-indexer)
+            build_final_image --build-arg "FROM_IMAGE=${CI_REGISTRY_IMAGE}/gitlab-go" \
+                              --build-arg "TAG=$(get_go_version)${IMAGE_TAG_EXT:-}" \
+                              --build-arg "GITLAB_ELASTICSEARCH_INDEXER_VERSION=${GITLAB_ELASTICSEARCH_INDEXER_VERSION}" \
+                              --build-arg "GITLAB_NAMESPACE=${GITLAB_NAMESPACE}" \
+                              --build-arg "CI_API_V4_URL=${CI_API_V4_URL}" \
+                              --build-arg "FETCH_ARTIFACTS_PAT=${FETCH_DEV_ARTIFACTS_PAT}" \
+                              --build-arg "CACHE_BUSTER=${GITLAB_ELASTICSEARCH_INDEXER_VERSION}$(date -uI)"
+            push_tags "${GITLAB_ELASTICSEARCH_INDEXER_VERSION}${IMAGE_TAG_EXT:-}"
             ;;
           *)
             echo "Unknown image: $CI_JOB_NAME" >&2

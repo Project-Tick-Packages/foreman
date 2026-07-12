@@ -54,8 +54,56 @@ on:
 permissions: {}
 
 jobs:
-  phase-zero:
-    name: "phase-zero: ${{ matrix.image }}"
+  ##########################################################################
+  # phase-zero
+  ##########################################################################
+  phase-zero-build:
+    name: "phase-zero-build: ${{ matrix.image }} (${{ matrix.arch }})"
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [gitlab-go, gitlab-rust]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
+          image: ${{ matrix.image }}
+          mode: build
+          arch: ${{ matrix.arch }}
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          gitaly-version: ${{ inputs.gitaly-version }}
+          gitlab-shell-version: ${{ inputs.gitlab-shell-version }}
+          gitlab-pages-version: ${{ inputs.gitlab-pages-version }}
+          gitlab-kas-version: ${{ inputs.gitlab-kas-version }}
+          gitlab-elasticsearch-indexer-version: ${{ inputs.gitlab-elasticsearch-indexer-version }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  phase-zero-merge:
+    name: "phase-zero-merge: ${{ matrix.image }}"
+    needs: phase-zero-build
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -72,6 +120,7 @@ jobs:
       - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
         with:
           image: ${{ matrix.image }}
+          mode: merge
           gitlab-version: ${{ inputs.gitlab-version }}
           image-tag: ${{ inputs.image-tag }}
           is-default-branch: ${{ inputs.is-default-branch }}
@@ -92,9 +141,57 @@ jobs:
           gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
           assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
 
-  phase-one:
-    name: "phase-one: ${{ matrix.image }}"
-    needs: phase-zero
+  ##########################################################################
+  # phase-one
+  ##########################################################################
+  phase-one-build:
+    name: "phase-one-build: ${{ matrix.image }} (${{ matrix.arch }})"
+    needs: phase-zero-merge
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [gitlab-logger, gitlab-gomplate, gitlab-graphicsmagick, gitlab-python, postgresql, cfssl-self-sign, kubectl]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
+          image: ${{ matrix.image }}
+          mode: build
+          arch: ${{ matrix.arch }}
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          gitaly-version: ${{ inputs.gitaly-version }}
+          gitlab-shell-version: ${{ inputs.gitlab-shell-version }}
+          gitlab-pages-version: ${{ inputs.gitlab-pages-version }}
+          gitlab-kas-version: ${{ inputs.gitlab-kas-version }}
+          gitlab-elasticsearch-indexer-version: ${{ inputs.gitlab-elasticsearch-indexer-version }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  phase-one-merge:
+    name: "phase-one-merge: ${{ matrix.image }}"
+    needs: phase-one-build
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -111,6 +208,7 @@ jobs:
       - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
         with:
           image: ${{ matrix.image }}
+          mode: merge
           gitlab-version: ${{ inputs.gitlab-version }}
           image-tag: ${{ inputs.image-tag }}
           is-default-branch: ${{ inputs.is-default-branch }}
@@ -131,12 +229,23 @@ jobs:
           gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
           assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
 
-  phase-two:
-    name: "phase-two: gitlab-base"
-    needs: phase-one
-    runs-on: ubuntu-24.04
+  ##########################################################################
+  # phase-two (gitlab-base)
+  ##########################################################################
+  phase-two-build:
+    name: "phase-two-build: gitlab-base (${{ matrix.arch }})"
+    needs: phase-one-merge
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -146,6 +255,8 @@ jobs:
       - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
         with:
           image: gitlab-base
+          mode: build
+          arch: ${{ matrix.arch }}
           gitlab-version: ${{ inputs.gitlab-version }}
           image-tag: ${{ inputs.image-tag }}
           is-default-branch: ${{ inputs.is-default-branch }}
@@ -161,9 +272,82 @@ jobs:
           gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
           assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
 
-  phase-three:
-    name: "phase-three: ${{ matrix.image }}"
-    needs: phase-two
+  phase-two-merge:
+    name: "phase-two-merge: gitlab-base"
+    needs: phase-two-build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
+          image: gitlab-base
+          mode: merge
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  ##########################################################################
+  # phase-three
+  ##########################################################################
+  phase-three-build:
+    name: "phase-three-build: ${{ matrix.image }} (${{ matrix.arch }})"
+    needs: phase-two-merge
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [certificates, gitlab-exiftool, gitlab-cosign, gitlab-ruby]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
+          image: ${{ matrix.image }}
+          mode: build
+          arch: ${{ matrix.arch }}
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  phase-three-merge:
+    name: "phase-three-merge: ${{ matrix.image }}"
+    needs: phase-three-build
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -180,6 +364,7 @@ jobs:
       - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
         with:
           image: ${{ matrix.image }}
+          mode: merge
           gitlab-version: ${{ inputs.gitlab-version }}
           image-tag: ${{ inputs.image-tag }}
           is-default-branch: ${{ inputs.is-default-branch }}
@@ -195,16 +380,24 @@ jobs:
           gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
           assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
 
-  phase-four:
-    name: "phase-four: ${{ matrix.image }}"
-    needs: phase-three
-    runs-on: ubuntu-24.04
+  ##########################################################################
+  # phase-four
+  ##########################################################################
+  phase-four-build:
+    name: "phase-four-build: ${{ matrix.image }} (${{ matrix.arch }})"
+    needs: phase-three-merge
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        image: [gitlab-exporter, gitlab-mailroom, gitaly, gitlab-container-registry, gitlab-kas, gitlab-pages, gitlab-shell]
+        image: [gitlab-exporter, gitlab-mailroom, gitaly, gitlab-container-registry, gitlab-kas, gitlab-pages, gitlab-shell, gitlab-agentk, gitlab-openbao, gitlab-zoekt, gitlab-elasticsearch-indexer]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -214,6 +407,8 @@ jobs:
       - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
         with:
           image: ${{ matrix.image }}
+          mode: build
+          arch: ${{ matrix.arch }}
           gitlab-version: ${{ inputs.gitlab-version }}
           image-tag: ${{ inputs.image-tag }}
           is-default-branch: ${{ inputs.is-default-branch }}
@@ -234,9 +429,91 @@ jobs:
           gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
           assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
 
-  phase-five:
-    name: "phase-five: gitlab-rails-ce"
-    needs: phase-four
+  phase-four-merge:
+    name: "phase-four-merge: ${{ matrix.image }}"
+    needs: phase-four-build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [gitlab-exporter, gitlab-mailroom, gitaly, gitlab-container-registry, gitlab-kas, gitlab-pages, gitlab-shell, gitlab-agentk, gitlab-openbao, gitlab-zoekt, gitlab-elasticsearch-indexer]
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
+          image: ${{ matrix.image }}
+          mode: merge
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          gitaly-version: ${{ inputs.gitaly-version }}
+          gitlab-shell-version: ${{ inputs.gitlab-shell-version }}
+          gitlab-pages-version: ${{ inputs.gitlab-pages-version }}
+          gitlab-kas-version: ${{ inputs.gitlab-kas-version }}
+          gitlab-elasticsearch-indexer-version: ${{ inputs.gitlab-elasticsearch-indexer-version }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  ##########################################################################
+  # phase-four-post (gitaly-init-cgroups; depends on merged gitaly)
+  ##########################################################################
+  phase-four-post-build:
+    name: "phase-four-post-build: gitaly-init-cgroups (${{ matrix.arch }})"
+    needs: phase-four-merge
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
+          image: gitaly-init-cgroups
+          mode: build
+          arch: ${{ matrix.arch }}
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          gitaly-version: ${{ inputs.gitaly-version }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  phase-four-post-merge:
+    name: "phase-four-post-merge: gitaly-init-cgroups"
+    needs: phase-four-post-build
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -248,7 +525,51 @@ jobs:
           submodules: true
       - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
         with:
+          image: gitaly-init-cgroups
+          mode: merge
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          gitaly-version: ${{ inputs.gitaly-version }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  ##########################################################################
+  # phase-five (gitlab-rails-ce)
+  ##########################################################################
+  phase-five-build:
+    name: "phase-five-build: gitlab-rails-ce (${{ matrix.arch }})"
+    needs: phase-four-merge
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
           image: gitlab-rails-ce
+          mode: build
+          arch: ${{ matrix.arch }}
           gitlab-version: ${{ inputs.gitlab-version }}
           image-tag: ${{ inputs.image-tag }}
           is-default-branch: ${{ inputs.is-default-branch }}
@@ -264,9 +585,82 @@ jobs:
           gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
           assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
 
-  phase-six:
-    name: "phase-six: ${{ matrix.image }}"
-    needs: phase-five
+  phase-five-merge:
+    name: "phase-five-merge: gitlab-rails-ce"
+    needs: phase-five-build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
+          image: gitlab-rails-ce
+          mode: merge
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  ##########################################################################
+  # phase-six
+  ##########################################################################
+  phase-six-build:
+    name: "phase-six-build: ${{ matrix.image }} (${{ matrix.arch }})"
+    needs: phase-five-merge
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [gitlab-sidekiq-ce, gitlab-toolbox-ce, gitlab-webservice-ce, gitlab-workhorse-ce]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: Project-Tick-Infrastructure/checkout@v5
+        with:
+          source-repository: ${{ inputs.cng-repository != '' && inputs.cng-repository || 'https://git.projecttick.org/project-tick/uppfinna/cng' }}
+          source-ref: ${{ inputs.cng-ref || 'master' }}
+          submodules: true
+      - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
+        with:
+          image: ${{ matrix.image }}
+          mode: build
+          arch: ${{ matrix.arch }}
+          gitlab-version: ${{ inputs.gitlab-version }}
+          image-tag: ${{ inputs.image-tag }}
+          registry-user: ${{ secrets.CNG_REGISTRY_USER }}
+          registry-password: ${{ secrets.CNG_REGISTRY_PASSWORD }}
+          fetch-artifacts-pat: ${{ secrets.CNG_FETCH_ARTIFACTS_PAT }}
+          ci-registry: ${{ vars.CNG_REGISTRY || 'registry.projecttick.org' }}
+          ci-registry-image: ${{ vars.CNG_REGISTRY_IMAGE || 'registry.projecttick.org/project-tick/uppfinna/cng' }}
+          gitlab-namespace: ${{ vars.CNG_GITLAB_NAMESPACE || 'project-tick/uppfinna/forge' }}
+          ce-project: ${{ vars.CNG_CE_PROJECT || 'uppfinna-project' }}
+          ci-api-v4-url: ${{ vars.CNG_API_V4_URL || 'https://git.projecttick.org/api/v4' }}
+          ci-server-fqdn: ${{ vars.CNG_SERVER_FQDN || 'git.projecttick.org' }}
+          gitaly-git-repo-url: ${{ vars.CNG_GITALY_GIT_REPO_URL || 'https://git.projecttick.org/project-tick/uppfinna/forge/git.git' }}
+          assets-image-registry-prefix: ${{ vars.CNG_ASSETS_IMAGE_REGISTRY_PREFIX || 'registry.projecttick.org/project-tick/uppfinna' }}
+
+  phase-six-merge:
+    name: "phase-six-merge: ${{ matrix.image }}"
+    needs: phase-six-build
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -283,6 +677,7 @@ jobs:
       - uses: Project-Tick/Project-Tick/.github/actions/uppfinna-cng-image@master
         with:
           image: ${{ matrix.image }}
+          mode: merge
           gitlab-version: ${{ inputs.gitlab-version }}
           image-tag: ${{ inputs.image-tag }}
           is-default-branch: ${{ inputs.is-default-branch }}
