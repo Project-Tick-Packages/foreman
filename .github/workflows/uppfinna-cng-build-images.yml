@@ -59,18 +59,14 @@ jobs:
   ##########################################################################
   phase-zero-build:
     name: "phase-zero-build: ${{ matrix.image }} (${{ matrix.arch }})"
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         image: [gitlab-go, gitlab-rust]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: [amd64, arm64]
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -147,18 +143,14 @@ jobs:
   phase-one-build:
     name: "phase-one-build: ${{ matrix.image }} (${{ matrix.arch }})"
     needs: phase-zero-merge
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         image: [gitlab-logger, gitlab-gomplate, gitlab-graphicsmagick, gitlab-python, postgresql, cfssl-self-sign, kubectl]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: [amd64, arm64]
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -235,17 +227,13 @@ jobs:
   phase-two-build:
     name: "phase-two-build: gitlab-base (${{ matrix.arch }})"
     needs: phase-one-merge
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: [amd64, arm64]
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -308,18 +296,14 @@ jobs:
   phase-three-build:
     name: "phase-three-build: ${{ matrix.image }} (${{ matrix.arch }})"
     needs: phase-two-merge
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         image: [certificates, gitlab-exiftool, gitlab-cosign, gitlab-ruby]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: [amd64, arm64]
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -386,18 +370,14 @@ jobs:
   phase-four-build:
     name: "phase-four-build: ${{ matrix.image }} (${{ matrix.arch }})"
     needs: phase-three-merge
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         image: [gitlab-exporter, gitlab-mailroom, gitaly, gitlab-container-registry, gitlab-kas, gitlab-pages, gitlab-shell, gitlab-agentk, gitlab-openbao, gitlab-zoekt, gitlab-elasticsearch-indexer]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: [amd64, arm64]
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -474,17 +454,13 @@ jobs:
   phase-four-post-build:
     name: "phase-four-post-build: gitaly-init-cgroups (${{ matrix.arch }})"
     needs: phase-four-merge
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: [amd64, arm64]
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -548,17 +524,13 @@ jobs:
   phase-five-build:
     name: "phase-five-build: gitlab-rails-ce (${{ matrix.arch }})"
     needs: phase-four-merge
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: [amd64, arm64]
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
@@ -621,18 +593,14 @@ jobs:
   phase-six-build:
     name: "phase-six-build: ${{ matrix.image }} (${{ matrix.arch }})"
     needs: phase-five-merge
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         image: [gitlab-sidekiq-ce, gitlab-toolbox-ce, gitlab-webservice-ce, gitlab-workhorse-ce]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: [amd64, arm64]
     steps:
       - uses: Project-Tick-Infrastructure/checkout@v5
         with:
