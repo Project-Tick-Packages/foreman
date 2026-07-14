@@ -145,7 +145,7 @@ runs:
         # branch like the other forge components (shell/pages/kas) rather than
         # the upstream 'v4.40.2-gitlab' tag, which does not exist in the mirror.
         GITLAB_CONTAINER_REGISTRY_VERSION: "master"
-        GITLAB_OPENBAO_VERSION: "v2.5.5-gitlab2"
+        GITLAB_OPENBAO_VERSION: "master"
         GITLAB_ZOEKT_SHA: "v1.17.1"
         GITLAB_ZOEKT_TAG: "v1.17.1"
         GIT_FILTER_REPO_VERSION: "2.47.0"
