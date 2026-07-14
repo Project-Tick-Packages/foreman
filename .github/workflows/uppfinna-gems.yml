@@ -45,7 +45,7 @@ jobs:
     # step below. Gems that need neither simply ignore them.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
         env:
           POSTGRES_USER: gitlab
           POSTGRES_PASSWORD: password
