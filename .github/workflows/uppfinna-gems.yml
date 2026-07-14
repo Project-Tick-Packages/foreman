@@ -58,7 +58,7 @@ jobs:
           --health-timeout 5s
           --health-retries 6
       redis:
-        image: redis:7.2-alpine
+        image: redis:8.8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
         ports:
           - 6379:6379
         options: >-
