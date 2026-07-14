@@ -90,7 +90,7 @@ jobs:
           submodules: true
 
       - name: Cache Ruby gems
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/vendor/ruby
           key: uppfinna-ruby-gems-audit-event-types-${{ runner.os }}-${{ hashFiles(format('{0}/Gemfile.lock', env.GITLAB_DIR), format('{0}/Gemfile.checksum', env.GITLAB_DIR)) }}

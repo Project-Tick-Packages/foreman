@@ -96,7 +96,7 @@ jobs:
           ruby-version: "3.3.11"
 
       - name: Cache gem bundle
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/vendor/gems/${{ matrix.gem_name }}/vendor/ruby
           key: uppfinna-vendored-gem-${{ matrix.gem_name }}-${{ runner.os }}-${{ hashFiles(format('{0}/vendor/gems/{1}/Gemfile.lock', env.GITLAB_DIR, matrix.gem_name)) }}

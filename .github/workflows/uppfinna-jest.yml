@@ -95,7 +95,7 @@ jobs:
           submodules: true
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/node_modules
           key: uppfinna-node-modules-${{ runner.os }}-${{ hashFiles(format('{0}/yarn.lock', env.GITLAB_DIR), format('{0}/package.json', env.GITLAB_DIR)) }}
@@ -103,7 +103,7 @@ jobs:
             uppfinna-node-modules-${{ runner.os }}-
 
       - name: Cache Jest cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/tmp/cache/jest
           key: uppfinna-jest-cache-${{ runner.os }}-${{ github.ref_name }}

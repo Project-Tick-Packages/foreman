@@ -170,7 +170,7 @@ jobs:
           submodules: true
 
       - name: Cache Ruby gems
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/vendor/ruby
           key: uppfinna-ruby-gems-${{ runner.os }}-${{ hashFiles(format('{0}/Gemfile.lock', env.GITLAB_DIR), format('{0}/Gemfile.checksum', env.GITLAB_DIR)) }}
@@ -178,7 +178,7 @@ jobs:
             uppfinna-ruby-gems-${{ runner.os }}-
 
       - name: Cache Gitaly / Workhorse / test fixtures
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/tmp/tests
           key: uppfinna-tmp-tests-${{ runner.os }}-${{ hashFiles(format('{0}/GITALY_SERVER_VERSION', env.GITLAB_DIR)) }}-${{ hashFiles(format('{0}/workhorse/**', env.GITLAB_DIR)) }}
@@ -189,7 +189,7 @@ jobs:
       # Share it across jobs; restore-keys let a job start from the newest
       # available cache and top it up.
       - name: Cache bootsnap
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/tmp/cache/bootsnap
           key: uppfinna-bootsnap-${{ runner.os }}-${{ hashFiles(format('{0}/Gemfile.lock', env.GITLAB_DIR)) }}-${{ github.sha }}

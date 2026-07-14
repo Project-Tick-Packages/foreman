@@ -90,7 +90,7 @@ jobs:
           submodules: true
 
       - name: Cache Ruby gems
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/vendor/ruby
           key: uppfinna-ruby-gems-fast-spec-${{ runner.os }}-${{ hashFiles(format('{0}/Gemfile.lock', env.GITLAB_DIR), format('{0}/Gemfile.checksum', env.GITLAB_DIR)) }}
@@ -99,7 +99,7 @@ jobs:
 
       # Bootsnap's compile cache turns the ~60s cold Rails boot into ~18s.
       - name: Cache bootsnap
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/tmp/cache/bootsnap
           key: uppfinna-bootsnap-fast-spec-${{ runner.os }}-${{ hashFiles(format('{0}/Gemfile.lock', env.GITLAB_DIR)) }}-${{ github.sha }}

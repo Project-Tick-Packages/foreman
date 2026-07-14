@@ -252,7 +252,7 @@ jobs:
           submodules: true
 
       - name: Cache Go build/mod (_build/cache)
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/_build/cache
           key: gitaly-gocache-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', env.GITLAB_DIR)) }}
@@ -360,7 +360,7 @@ jobs:
           submodules: true
 
       - name: Cache Go build/mod (_build/cache)
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/_build/cache
           key: gitaly-gocache-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', env.GITLAB_DIR)) }}
@@ -473,7 +473,7 @@ jobs:
           submodules: true
 
       - name: Cache Go build/mod (_build/cache)
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.GITLAB_DIR }}/_build/cache
           key: gitaly-gocache-${{ runner.os }}-${{ hashFiles(format('{0}/go.sum', env.GITLAB_DIR)) }}
